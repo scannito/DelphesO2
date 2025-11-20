@@ -4,10 +4,10 @@
 WHAT=default
 FIELD=0.5
 RMIN=100.
-WRITER_PATH=${DELPHESO2_ROOT}/lut/
-if [[ -z ${DELPHESO2_ROOT} ]]; then
-    WRITER_PATH="../../src/"
-fi
+#WRITER_PATH=${DELPHESO2_ROOT}/lut/
+#if [[ -z ${DELPHESO2_ROOT} ]]; then
+#    WRITER_PATH="../../src/"
+#fi
 OUT_PATH=.
 OUT_TAG=
 PARALLEL_JOBS=1
