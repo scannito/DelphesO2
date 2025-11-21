@@ -6,3 +6,4 @@
 *.json
 *-workspace
 *.dat
+*.DS_Store
