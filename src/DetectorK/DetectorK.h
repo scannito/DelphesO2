@@ -6,7 +6,10 @@
 #include <TList.h>
 #include <TGraph.h>
 #include <Riostream.h>
-#include "HistoManager.h"
+#include <TH2F.h>
+#include <TH1F.h>
+#include <TVector2.h>
+#include <TMath.h>
 
 /***********************************************************
 
@@ -95,21 +98,88 @@ public:
   
   Float_t GetRadius()   const {return radius;}
   Float_t GetRadL()     const {return radL;}
-  Float_t GetXRho()     const {return xrho;}  
   Float_t GetPhiRes()   const {return phiRes;}
   Float_t GetZRes()     const {return zRes;}
   Float_t GetLayerEff() const {return eff;}
 
+  // Backup for temporary masking due to φ-gaps
+  double phiResDefault;
+  double zResDefault;
+  double radLengthDefault;
+  bool hasStoredDefaults = false; 
+
+  // Add a phi gap from phiStart to phiEnd (in radians)
+  void AddPhiGap(float phiStart, float phiEnd) {
+    phiGaps.push_back(std::make_pair(phiStart, phiEnd));
+  }
+
+  void ClearPhiGaps() {
+    phiGaps.clear();  // STL vector clear
+}
+ 
+ void PrintGaps(Double_t phiShift) const {
+    if (phiGaps.empty()) {
+        printf("Layer '%s' has no φ-gaps defined.\n", GetName());
+        return;
+    }
+
+    printf("Layer '%s' φ-gaps (shift = %.4f rad):\n", GetName(), phiShift);
+    for (const auto& gap : phiGaps) {
+        double start = TVector2::Phi_0_2pi(gap.first + phiShift);
+        double end   = TVector2::Phi_0_2pi(gap.second + phiShift);
+
+        // Handle wrap-around for readability
+        if (end < start)
+            printf("  Gap from %.4f → 2π and 0 → %.4f\n", start, end);
+        else
+            printf("  Gap from %.4f to %.4f\n", start, end);
+    }
+}
+// Check if the given phi is in any gap
+//  bool IsInGap(float phi) const {
+//    for (auto& gap : phiGaps) {
+//      if (phi >= gap.first && phi <= gap.second)
+//        return true;
+//    }
+//    return false;
+//  }
+//
+//
+
+// Bool_t IsInGap(Double_t phi, Double_t phiShift = 0) const;
+ Bool_t IsInGap(Double_t phi, Double_t phiShift) const {
+    Double_t shiftedPhi = TVector2::Phi_0_2pi(phi - phiShift);  // shift the track φ
+    for (const auto& gap : phiGaps) {
+        double start = TVector2::Phi_0_2pi(gap.first);
+        double end   = TVector2::Phi_0_2pi(gap.second);
+
+        if (end < start) {
+            if (shiftedPhi >= start || shiftedPhi <= end) return kTRUE;  // wraparound
+        } else {
+            if (shiftedPhi >= start && shiftedPhi <= end) return kTRUE;
+        }
+    }
+    return kFALSE;
+}
+ int GetNumberOfPhiGaps() const { return phiGaps.size(); }
+
   //  void Print() {printf("  r=%3.1lf X0=%1.6lf sigPhi=%1.4lf sigZ=%1.4lf\n",radius,radL,phiRes,zRes); }
-  Float_t radius; Float_t radL; Float_t xrho; Float_t phiRes; Float_t zRes;   
+  Float_t radius; Float_t radL; Float_t phiRes; Float_t zRes;   
   Float_t eff;
   Bool_t isDead;
+  Bool_t isTempDead;
+
+  std::vector<std::pair<float, float>> phiGaps;  // Store gaps in phi
 
  ClassDef(CylLayerK,1);
 };
 
-
 class DetectorK : public TNamed {
+
+ private:
+  Bool_t fUsePhiRandomisation = kFALSE;
+  double fPhiShift = 0.0;
+
 
  public:
   
@@ -117,15 +187,34 @@ class DetectorK : public TNamed {
   DetectorK(char *name,char *title);
   virtual ~DetectorK();
 
-  enum {kNptBins = 50}; // less then 400 !!
+  enum {kNptBins = 80}; // less then 400 !!
  
-  void AddLayer(char *name, Float_t radius, Float_t radL, Float_t xrho=0., Float_t phiRes=999999, Float_t zRes=999999, Float_t eff=0.95);
+  TList* GetLayers() { return &fLayers; }
+  void AddLayer(char *name, Float_t radius, Float_t radL, Float_t phiRes=999999, Float_t zRes=999999, Float_t eff=0.95);
   void KillLayer(char *name);
   void SetRadius(char *name, Float_t radius);
   void SetRadiationLength(char *name, Float_t radL);
   void SetResolution(char *name, Float_t phiRes=999999, Float_t zRes=999999);
   void SetLayerEfficiency(char *name, Float_t eff=0.95);
   void RemoveLayer(char *name);
+  //new
+  void KillLayerTemporarily(const char* name);
+  void ResetTemporaryLayerFlags();
+  void SetPhiShift(double shift) { fPhiShift = shift; }
+
+  void ApplyShiftedPetalGapsToLayers(const std::vector<TString>& layerNames,
+                                   const std::vector<double>& gapWidths,
+                                   int nPetals,
+                                   double phiShift);
+
+  
+  //void AddPetalGapsToLayer(const char* layerName, int nPetals, double gapWidth);
+  void AddPetalGapsToLayer(const char *layerName, int nPetals,double gapWidthRad,double layerOffsetRad, bool centerGap);
+
+  void ClearAllPhiGaps();
+  
+  void EnablePhiRandomisation(Bool_t enable = kTRUE);
+
   CylLayerK* FindLayer(char* name) const;
   CylLayerK* FindLayer(double r, int mode) const;
   Int_t      FindLayerID(double r, int mode) const;
@@ -137,7 +226,7 @@ class DetectorK : public TNamed {
 
   void PrintLayout(Bool_t full = kFALSE); 
   void PlotLayout(Int_t plotDead = kTRUE);
-  
+   
   void MakeAliceAllNew(Bool_t flagTPC =1,Bool_t flagMon=1);
   void MakeAliceCurrent(Int_t AlignResiduals = 0, Bool_t flagTPC =1);
   void AddTPC(Float_t phiResMean=0.1, Float_t zResMean=0.1, Int_t skip=1);
@@ -150,8 +239,6 @@ class DetectorK : public TNamed {
   Float_t GetLhcUPCscale() const { return fLhcUPCscale; }
   void SetParticleMass(Float_t particleMass) {fParticleMass = particleMass; }
   Float_t GetParticleMass() const { return fParticleMass; }
-  void SetMaxSnp(Float_t snp = 0.85) {fMaxSnp = snp; }
-  Float_t GetMaxSnp() const {return fMaxSnp;}
   void SetIntegrationTime(Float_t integrationTime) {fIntegrationTime = integrationTime; }
   Float_t GetIntegrationTime() const { return fIntegrationTime; }
   void SetMaxRadiusOfSlowDetectors(Float_t maxRadiusSlowDet) {fMaxRadiusSlowDet =  maxRadiusSlowDet; }
@@ -163,6 +250,9 @@ class DetectorK : public TNamed {
 
   void SetAtLeastHits(Int_t atLeast ) {fAtLeastHits = atLeast; }
   Int_t GetAtLeastHits() const { return fAtLeastHits; }
+
+  void SetAtLeastInnerHits(Int_t atLeastInner ) {fAtLeastInnerHits = atLeastInner; }
+
 
   void SetAtLeastCorr(Int_t atLeastCorr ) {fAtLeastCorr = atLeastCorr; }
   Int_t GetAtLeastCorr() const { return fAtLeastCorr; }
@@ -185,7 +275,7 @@ class DetectorK : public TNamed {
   Float_t GetNumberOfActiveLayers() const {return fNumberOfActiveLayers; }
   Float_t GetNumberOfActiveITSLayers() const {return fNumberOfActiveITSLayers; }
 
-  void SolveViaBilloir(Double_t selPt =0.1, double ptmin=-1);
+  void SolveViaBilloir( Int_t flagD0=1,Int_t print=1, Bool_t allPt=1, Double_t meanPt =0.095, char* detLayer=((char*)""));
   //
   Bool_t SolveTrack(TrackSol& ts);
   Bool_t CalcITSEff(TrackSol& ts, Bool_t verbose=kTRUE);
@@ -193,6 +283,9 @@ class DetectorK : public TNamed {
   //
   void   SetMinRadTrack(double r=132) {  fMinRadTrack = r; }
   Double_t GetMinRadTrack()  const { return fMinRadTrack;}
+
+  TH1F* GetPhiHistogram() const;
+  TH2F* GetEffVsPhiHistogram() const;
 
   //
   //
@@ -209,6 +302,7 @@ class DetectorK : public TNamed {
   Double_t UpcHitDensity     ( Double_t radius )   ;
   Double_t IntegratedHitDensity  ( Double_t multiplicity, Double_t radius )   ;
   Double_t OneEventHitDensity    ( Double_t multiplicity, Double_t radius ) const   ;
+  Double_t D0IntegratedEfficiency( Double_t pt, Double_t corrEfficiency[][400] ) const ;
   
   TGraph* GetGraphMomentumResolution(Int_t color, Int_t linewidth=1);
   TGraph* GetGraphPointingResolution(Int_t axis,Int_t color, Int_t linewidth=1);
@@ -217,22 +311,24 @@ class DetectorK : public TNamed {
 
   TGraph* GetGraphImpactParam(Int_t mode, Int_t axis, Int_t color, Int_t linewidth=1);
 
-  TGraph* GetGraphRecoEfficiency(Int_t color, Int_t linewidth=1); 
-  TGraph* GetGraphRecoFakes(Int_t color, Int_t linewidth);
-  TGraph* GetGraphRecoPurity(Int_t color, Int_t linewidth);
+  TGraph* GetGraphRecoEfficiency(Int_t particle, Int_t color, Int_t linewidth=1); 
+  TGraph* GetGraphRecoFakes(Int_t particle,Int_t color, Int_t linewidth);
+  TGraph* GetGraphRecoPurity(Int_t particle,Int_t color, Int_t linewidth);
 
-  void MakeStandardPlots(Bool_t add =0, Int_t color=1, Int_t linewidth=1, const char* outGr="");
+  TGraph* GetGraph(Int_t number, Int_t color, Int_t linewidth=1);
+
+  void MakeStandardPlots(Bool_t add =0, Int_t color=1, Int_t linewidth=1,Bool_t onlyPionEff=0);
 
   // method to extend AliExternalTrackParam functionality
   static Bool_t GetXatLabR(AliExternalTrackParam* tr,Double_t r,Double_t &x, Double_t bz, Int_t dir=0);
-  static Bool_t PropagateToR(AliExternalTrackParam* trc, double r, double b, int dir=0, double maxStep=2.0);
-  Double_t* PrepareEffFakeKombinations(TMatrixD *probKomb, TMatrixD *probLay, int nl, double* prob=0);
+  static Bool_t PropagateToR(AliExternalTrackParam* trc, double r, double b, int dir=0);
+  Double_t* PrepareEffFakeKombinations(TMatrixD *probKomb, TMatrixD *probLay, double* prob=0);
 
   Bool_t IsITSLayer(const TString& lname);
+  Bool_t IsInnerLayer(const TString& lname);
 
-  Double_t GetGoodHitProb(Int_t i) { return fGoodHitProb[i]; };
-  
   static Bool_t verboseR;
+  static Bool_t verboseG;
  protected:
  
   Int_t fNumberOfLayers;        // total number of layers in the model
@@ -245,13 +341,13 @@ class DetectorK : public TNamed {
   Float_t fConfLevel;           // Confidence Level for the tracking
   Float_t fAvgRapidity;         // rapidity of the track (= mean)
   Float_t fParticleMass;        // Particle used for tracking. Standard: mass of pion
-  Float_t fMaxSnp; // max allowed snp
   Double_t fMaxRadiusSlowDet;   // Maximum radius for slow detectors.  Fast detectors 
                                 // and only fast detectors reside outside this radius.
 
   Int_t fAtLeastHits;     // min. number of hits for the track to account it
   Int_t fAtLeastCorr;     // min. number of correct hits for the track to be "good"
   Int_t fAtLeastFake;     // min. number of fake hits for the track to be "fake"
+  Int_t fAtLeastInnerHits;   ///< Minimum number of hits required in inner layers (ddd0, ddd1, ddd2)
 
   Double_t fMaxSeedRadius; // max seeding radius, e.g. to exclude TRD
   Double_t fptScale;      // used for maxPt
@@ -266,10 +362,9 @@ class DetectorK : public TNamed {
   Double_t fResolutionZ[kNptBins];                           // array of z resolution
   Double_t fDetPointRes[kMaxNumberOfDetectors][kNptBins];    // array of rphi resolution per layer
   Double_t fDetPointZRes[kMaxNumberOfDetectors][kNptBins];   // array of z resolution per layer
-  Double_t fEfficiency[kNptBins];                            // efficiency 
-  Double_t fFake[kNptBins];                                  // fake prob
-  Double_t fGoodHitProb[kMaxNumberOfDetectors];              // array of good hit probability per layer
-  
+  Double_t fEfficiency[3][kNptBins];                         // efficiency for different particles
+  Double_t fFake[3][kNptBins];                               // fake prob for different particles
+
   Int_t kDetLayer;                              // layer for which a few more details are extracted
   Double_t fResolutionRPhiLay[kNptBins];                        // array of rphi resolution
   Double_t fResolutionZLay[kNptBins];                           // array of z resolution
