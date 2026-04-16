@@ -46,8 +46,8 @@ void fatInit_geometry_ML_baseline_default_radii(float field = 2.0, float rmin = 
   fat.AddLayer((char*)"bpipe1", 5.7, x0Pipe1);
 
   fat.AddLayer((char*)"ddd3", 7, x0MLMod1, resRPhiOT, resZOT, eff);
-  fat.AddLayer((char*)"ddd4", 9., x0MLMod1, resRPhiOT, resZOT, eff);
-  fat.AddLayer((char*)"ddd5", 12., x0MLMod1, resRPhiOT, resZOT, eff);
+  fat.AddLayer((char*)"ddd4", 11., x0MLMod1, resRPhiOT, resZOT, eff);
+  fat.AddLayer((char*)"ddd5", 15., x0MLMod1, resRPhiOT, resZOT, eff);
   fat.AddLayer((char*)"ddd6", 20., x0MLMod1, resRPhiOT, resZOT, eff);
 
   fat.AddLayer((char*)"iTOF", 21., 3. * x0OT, 0.03, 0.03, 1.0); // NEW 23/03/26 iTOF moved to 21 cm
