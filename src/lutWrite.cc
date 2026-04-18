@@ -3,11 +3,11 @@
 
 #ifndef lutWrite_CC
 #define lutWrite_CC
-#include "lutCovm.hh"
 #include "fwdRes/fwdRes.C"
+#include "lutCovm.hh"
 
 DetectorK fat;
-void diagonalise(lutEntry_t &lutEntry);
+void diagonalise(lutEntry_t& lutEntry);
 static float etaMaxBarrel = 1.75;
 
 bool usePara = true;        // use fwd parameterisation
@@ -23,34 +23,39 @@ void printLutWriterConfiguration()
   std::cout << "    -> useFlatDipole = " << useFlatDipole << std::endl;
 }
 
-bool
-fatSolve(lutEntry_t &lutEntry, float pt = 0.1, float eta = 0.0, float mass = 0.13957000, int itof = 0, int otof = 0, int q = 1)
+bool fatSolve(lutEntry_t& lutEntry, float pt = 0.1, float eta = 0.0, float mass = 0.13957000, int itof = 0, int otof = 0, int q = 1)
 {
   lutEntry.valid = false;
 
   // solve track
-  if (q > 1) mass = -mass;
+  if (q > 1)
+    mass = -mass;
   TrackSol tr(1, pt, eta, q, mass);
-  if (!fat.SolveTrack(tr)) return false;
-  AliExternalTrackParam *trPtr = (AliExternalTrackParam*)tr.fTrackCmb.At(0);
-  if (!trPtr) return false;
+  if (!fat.SolveTrack(tr))
+    return false;
+  AliExternalTrackParam* trPtr = (AliExternalTrackParam*)tr.fTrackCmb.At(0);
+  if (!trPtr)
+    return false;
 
   lutEntry.valid = true;
   lutEntry.itof = fat.GetGoodHitProb(itof);
   lutEntry.otof = fat.GetGoodHitProb(otof);
-  for (int i = 0; i < 15; ++i) lutEntry.covm[i] = trPtr->GetCovariance()[i];
+  for (int i = 0; i < 15; ++i)
+    lutEntry.covm[i] = trPtr->GetCovariance()[i];
 
   // define the efficiency
   auto totfake = 0.;
   lutEntry.eff = 1.;
   for (int i = 1; i < 20; ++i) {
     auto igoodhit = fat.GetGoodHitProb(i);
-    if (igoodhit <= 0. || i == itof || i == otof) continue;
+    if (igoodhit <= 0. || i == itof || i == otof)
+      continue;
     lutEntry.eff *= igoodhit;
     auto pairfake = 0.;
     for (int j = i + 1; j < 20; ++j) {
       auto jgoodhit = fat.GetGoodHitProb(j);
-      if (jgoodhit <= 0. || j == itof || j == otof) continue;
+      if (jgoodhit <= 0. || j == itof || j == otof)
+        continue;
       pairfake = (1. - igoodhit) * (1. - jgoodhit);
       break;
     }
@@ -61,15 +66,14 @@ fatSolve(lutEntry_t &lutEntry, float pt = 0.1, float eta = 0.0, float mass = 0.1
   return true;
 }
 
-bool
-fwdSolve(float *covm, float pt = 0.1, float eta = 0.0, float mass = 0.13957000)
+bool fwdSolve(float* covm, float pt = 0.1, float eta = 0.0, float mass = 0.13957000)
 {
-  if (fwdRes(covm, pt, eta, mass) < 0) return false;
+  if (fwdRes(covm, pt, eta, mass) < 0)
+    return false;
   return true;
 }
 
-bool
-fwdPara(lutEntry_t &lutEntry, float pt = 0.1, float eta = 0.0, float mass = 0.13957000, float Bfield = 0.5)
+bool fwdPara(lutEntry_t& lutEntry, float pt = 0.1, float eta = 0.0, float mass = 0.13957000, float Bfield = 0.5)
 {
   lutEntry.valid = false;
 
@@ -77,55 +81,57 @@ fwdPara(lutEntry_t &lutEntry, float pt = 0.1, float eta = 0.0, float mass = 0.13
   if (fabs(eta) < etaMaxBarrel || fabs(eta) > 4)
     return false;
 
-  if (!fatSolve(lutEntry, pt, etaMaxBarrel, mass)) return false;
+  if (!fatSolve(lutEntry, pt, etaMaxBarrel, mass))
+    return false;
   float covmbarrel[15] = {0};
   for (int i = 0; i < 15; ++i) {
     covmbarrel[i] = lutEntry.covm[i];
   }
 
   // parametrisation at eta = 4
-  double beta = 1./sqrt(1+mass*mass/pt/pt/cosh(eta)/cosh(eta)); 
-  float dca_pos = 2.5e-4/sqrt(3); // 2.5 micron/sqrt(3)
-  float r0 = 0.5; // layer 0 radius [cm]
+  double beta = 1. / sqrt(1 + mass * mass / pt / pt / cosh(eta) / cosh(eta));
+  float dca_pos = 2.5e-4 / sqrt(3); // 2.5 micron/sqrt(3)
+  float r0 = 0.5;                   // layer 0 radius [cm]
   float r1 = 1.3;
   float r2 = 2.5;
   float x0layer = 0.001; // material budget (rad length) per layer
-  double sigma_alpha = 0.0136/beta/pt*sqrt(x0layer*cosh(eta))*(1+0.038*log(x0layer*cosh(eta)));
-  double dcaxy_ms = sigma_alpha*r0*sqrt(1+r1*r1/(r2-r0)/(r2-r0));
-  double dcaxy2 = dca_pos*dca_pos+dcaxy_ms*dcaxy_ms;
+  double sigma_alpha = 0.0136 / beta / pt * sqrt(x0layer * cosh(eta)) * (1 + 0.038 * log(x0layer * cosh(eta)));
+  double dcaxy_ms = sigma_alpha * r0 * sqrt(1 + r1 * r1 / (r2 - r0) / (r2 - r0));
+  double dcaxy2 = dca_pos * dca_pos + dcaxy_ms * dcaxy_ms;
 
-  double dcaz_ms = sigma_alpha*r0*cosh(eta);
-  double dcaz2 = dca_pos*dca_pos+dcaz_ms*dcaz_ms;
+  double dcaz_ms = sigma_alpha * r0 * cosh(eta);
+  double dcaz2 = dca_pos * dca_pos + dcaz_ms * dcaz_ms;
 
-  float Leta = 2.8/sinh(eta)-0.01*r0; // m
-  double relmomres_pos = 10e-6*pt/0.3/Bfield/Leta/Leta*sqrt(720./15.); 
+  float Leta = 2.8 / sinh(eta) - 0.01 * r0; // m
+  double relmomres_pos = 10e-6 * pt / 0.3 / Bfield / Leta / Leta * sqrt(720. / 15.);
 
-  float relmomres_barrel = sqrt(covmbarrel[14])*pt;
+  float relmomres_barrel = sqrt(covmbarrel[14]) * pt;
   float Router = 1; // m
-  float relmomres_pos_barrel = 10e-6*pt/0.3/Bfield/Router/Router/sqrt(720./15.);
-  float relmomres_MS_barrel = sqrt(relmomres_barrel*relmomres_barrel-relmomres_pos_barrel*relmomres_pos_barrel);
+  float relmomres_pos_barrel = 10e-6 * pt / 0.3 / Bfield / Router / Router / sqrt(720. / 15.);
+  float relmomres_MS_barrel = sqrt(relmomres_barrel * relmomres_barrel - relmomres_pos_barrel * relmomres_pos_barrel);
 
   // interpolate MS contrib (rel resolution 0.4 at eta = 4)
-  float relmomres_MS_eta4 = 0.4/beta*0.5/Bfield;
-  float relmomres_MS = relmomres_MS_eta4*pow(relmomres_MS_eta4/relmomres_MS_barrel,(fabs(eta)-4.)/(4.-etaMaxBarrel));
-  float momres_tot = pt*sqrt(relmomres_pos*relmomres_pos + relmomres_MS*relmomres_MS); // total absolute mom reso
+  float relmomres_MS_eta4 = 0.4 / beta * 0.5 / Bfield;
+  float relmomres_MS = relmomres_MS_eta4 * pow(relmomres_MS_eta4 / relmomres_MS_barrel, (fabs(eta) - 4.) / (4. - etaMaxBarrel));
+  float momres_tot = pt * sqrt(relmomres_pos * relmomres_pos + relmomres_MS * relmomres_MS); // total absolute mom reso
 
   // Fill cov matrix diag
   for (int i = 0; i < 15; ++i)
     lutEntry.covm[i] = 0;
 
   lutEntry.covm[0] = covmbarrel[0];
-  if (dcaxy2 > lutEntry.covm[0]) lutEntry.covm[0] = dcaxy2;
+  if (dcaxy2 > lutEntry.covm[0])
+    lutEntry.covm[0] = dcaxy2;
   lutEntry.covm[2] = covmbarrel[2];
-  if (dcaz2 > lutEntry.covm[2]) lutEntry.covm[2] = dcaz2;
-  lutEntry.covm[5] = covmbarrel[5]; // sigma^2 sin(phi)
-  lutEntry.covm[9] = covmbarrel[9]; // sigma^2 tanl
-  lutEntry.covm[14] = momres_tot*momres_tot/pt/pt/pt/pt;  // sigma^2 1/pt
+  if (dcaz2 > lutEntry.covm[2])
+    lutEntry.covm[2] = dcaz2;
+  lutEntry.covm[5] = covmbarrel[5];                                // sigma^2 sin(phi)
+  lutEntry.covm[9] = covmbarrel[9];                                // sigma^2 tanl
+  lutEntry.covm[14] = momres_tot * momres_tot / pt / pt / pt / pt; // sigma^2 1/pt
   return true;
 }
 
-void
-lutWrite(const char* filename = "lutCovm.dat", int pdg = 211, float field = 0.2, int itof = 0, int otof = 0)
+void lutWrite(const char* filename = "lutCovm.dat", int pdg = 211, float field = 0.2, int itof = 0, int otof = 0)
 {
 
   if (useFlatDipole && useDipole) {
@@ -152,34 +158,34 @@ lutWrite(const char* filename = "lutCovm.dat", int pdg = 211, float field = 0.2,
   }
   lutHeader.field = field;
   // nch
-  lutHeader.nchmap.log   = true;
+  lutHeader.nchmap.log = true;
   lutHeader.nchmap.nbins = 20;
-  lutHeader.nchmap.min   = 0.5;
-  lutHeader.nchmap.max   = 3.5;
+  lutHeader.nchmap.min = 0.5;
+  lutHeader.nchmap.max = 3.5;
   // radius
-  lutHeader.radmap.log   = false;
+  lutHeader.radmap.log = false;
   lutHeader.radmap.nbins = 1;
-  lutHeader.radmap.min   = 0.;
-  lutHeader.radmap.max   = 100.;
+  lutHeader.radmap.min = 0.;
+  lutHeader.radmap.max = 100.;
   // eta
-  lutHeader.etamap.log   = false;
+  lutHeader.etamap.log = false;
   lutHeader.etamap.nbins = 80;
-  lutHeader.etamap.min   = -4.;
-  lutHeader.etamap.max   =  4.;
+  lutHeader.etamap.min = -4.;
+  lutHeader.etamap.max = 4.;
   // pt
-  lutHeader.ptmap.log    = true;
-  lutHeader.ptmap.nbins  = 200;
-  lutHeader.ptmap.min    = -2;
-  lutHeader.ptmap.max    = 2.;
-  lutFile.write(reinterpret_cast<char *>(&lutHeader), sizeof(lutHeader));
-  
+  lutHeader.ptmap.log = true;
+  lutHeader.ptmap.nbins = 200;
+  lutHeader.ptmap.min = -2;
+  lutHeader.ptmap.max = 2.;
+  lutFile.write(reinterpret_cast<char*>(&lutHeader), sizeof(lutHeader));
+
   // entries
   const int nnch = lutHeader.nchmap.nbins;
   const int nrad = lutHeader.radmap.nbins;
   const int neta = lutHeader.etamap.nbins;
   const int npt = lutHeader.ptmap.nbins;
   lutEntry_t lutEntry;
-  
+
   // write entries
   for (int inch = 0; inch < nnch; ++inch) {
     auto nch = lutHeader.nchmap.eval(inch);

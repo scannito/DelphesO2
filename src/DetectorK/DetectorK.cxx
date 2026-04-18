@@ -1,5 +1,8 @@
 #include "DetectorK.h"
+
+#include "AliExternalTrackParam.h"
 #include "AliLog.h"
+
 #include "TROOT.h"
 #include "TRandom.h"
 #include "TVector2.h"
@@ -17,8 +20,6 @@
 #include <TMatrixD.h>
 #include <TText.h>
 
-#include "AliExternalTrackParam.h"
-
 /***********************************************************
 
 Fast Simulation tool for Inner Tracker Systems
@@ -33,31 +34,31 @@ Changes by S. Rossegger -> see header file
 Bool_t DetectorK::verboseR = 0;
 Bool_t DetectorK::verboseG = 0;
 
-static TH1F *hPhiDist = nullptr;
-static TH2F *hEffVsPhi = nullptr;
+static TH1F* hPhiDist = nullptr;
+static TH2F* hEffVsPhi = nullptr;
 
-#define RIDICULOUS                                                             \
+#define RIDICULOUS \
   999999 // A ridiculously large resolution (cm) to flag a dead detector
 
-#define Luminosity                                                             \
-  1.e27 // Luminosity of the beam (LHC HI == 1.e27, RHIC II == 8.e27 )
+#define Luminosity \
+  1.e27            // Luminosity of the beam (LHC HI == 1.e27, RHIC II == 8.e27 )
 #define SigmaD 6.0 // Size of the interaction diamond (cm) (LHC = 6.0 cm)
-#define dNdEtaMinB                                                             \
+#define dNdEtaMinB \
   600 // 1//950//660//950           // Multiplicity per unit Eta  (AuAu MinBias
       // = 170, Central = 700)
 // #define dNdEtaCent    2300//15000 //1600//2300        // Multiplicity per
 // unit Eta  (LHC at 5.5 TeV not known)
 
-#define CrossSectionMinB                                                       \
+#define CrossSectionMinB \
   8 // minB Cross section for event under study (PbPb MinBias ~ 8 Barns)
-#define AcceptanceOfTpcAndSi                                                   \
+#define AcceptanceOfTpcAndSi \
   1 // 1//0.60 //0.35  // Assumed geometric acceptance (efficiency) of the TPC
     // and Si detectors
-#define UPCBackgroundMultiplier                                                \
+#define UPCBackgroundMultiplier \
   1.0 // Increase multiplicity in detector (0.0 to 1.0 * UPCRate ) (eg 1.0)
-#define OtherBackground                                                        \
+#define OtherBackground \
   0.0 // Increase multiplicity in detector (0.0 to 1.0 * minBias)  (eg 0.0)
-#define EfficiencySearchFlag                                                   \
+#define EfficiencySearchFlag \
   2 // Define search method:
     // -> ChiSquarePlusConfLevel = 2, ChiSquare = 1, Simple = 0.
 
@@ -67,14 +68,15 @@ static TH2F *hEffVsPhi = nullptr;
 
 ClassImp(TrackSol)
 
-    const double DetectorK::kPtMinFix = 0.010;
+  const double DetectorK::kPtMinFix = 0.010;
 const double DetectorK::kPtMaxFix = 131.5;
 
 // TMatrixD *probKomb; // table for efficiency kombinatorics
 
-class ForwardLayer : public TNamed {
-public:
-  ForwardLayer(char *name) : TNamed(name, name) {}
+class ForwardLayer : public TNamed
+{
+ public:
+  ForwardLayer(char* name) : TNamed(name, name) {}
 
   Float_t GetZ() const { return zPos; }
   Float_t GetXRes() const { return xRes; }
@@ -97,62 +99,81 @@ public:
   ClassDef(ForwardLayer, 1);
 };
 
-ClassImp(DetectorK) DetectorK::DetectorK()
-    : TNamed("test_detector", "detector"), fNumberOfLayers(0),
-      fNumberOfActiveLayers(0), fNumberOfActiveITSLayers(0), fBField(0.5),
-      fLhcUPCscale(1.0), fIntegrationTime(0.02), // in ms
-      fConfLevel(0.0027),                        // 0.27 % -> 3 sigma confidence
-      fAvgRapidity(
-          0.45), // Avg rapidity, MCS calc is a function of crossing angle
-      fParticleMass(0.140), // Standard: pion mass
-      fMaxRadiusSlowDet(10.),
-      fAtLeastHits(7), // if -1, then require hit on all ITS layers
-      fAtLeastCorr(7), // if -1, then correct hit on all ITS layers
-      fAtLeastFake(1), // if at least x fakes, track is considered fake ...
-      fMaxSeedRadius(50000), fptScale(10.), fdNdEtaCent(2300), kDetLayer(-1),
-      fMinRadTrack(132.) {
+ClassImp(DetectorK);
+
+DetectorK::DetectorK()
+  : TNamed("test_detector", "detector"),
+    fNumberOfLayers(0),
+    fNumberOfActiveLayers(0),
+    fNumberOfActiveITSLayers(0),
+    fBField(0.5),
+    fLhcUPCscale(1.0),
+    fIntegrationTime(0.02), // in ms
+    fConfLevel(0.0027),     // 0.27 % -> 3 sigma confidence
+    fAvgRapidity(0.45),     // Avg rapidity, MCS calc is a function of crossing angle
+    fParticleMass(0.140),   // Standard: pion mass
+    fMaxRadiusSlowDet(10.),
+    fAtLeastHits(7), // if -1, then require hit on all ITS layers
+    fAtLeastCorr(7), // if -1, then correct hit on all ITS layers
+    fAtLeastFake(1), // if at least x fakes, track is considered fake ...
+    fMaxSeedRadius(50000),
+    fptScale(10.),
+    fdNdEtaCent(2300),
+    kDetLayer(-1),
+    fMinRadTrack(132.)
+{
   //
   // default constructor
   //
   //  fLayers = new TObjArray();
 }
 
-DetectorK::DetectorK(char *name, char *title)
-    : TNamed(name, title), fNumberOfLayers(0), fNumberOfActiveLayers(0),
-      fNumberOfActiveITSLayers(0), fBField(0.5), fLhcUPCscale(1.0),
-      fIntegrationTime(0.02), // in ms
-      fConfLevel(0.0027),     // 0.27 % -> 3 sigma confidence
-      fAvgRapidity(
-          0.45), // Avg rapidity, MCS calc is a function of crossing angle
-      fParticleMass(0.140), // Standard: pion mass
-      fMaxRadiusSlowDet(10.),
-      fAtLeastHits(-1), // if -1, then require hit on all ITS layers
-      fAtLeastCorr(-1), // if -1, then correct hit on all ITS layers
-      fAtLeastFake(1),  // if at least x fakes, track is considered fake ...
-      fMaxSeedRadius(50000), fptScale(10.), fdNdEtaCent(2200), kDetLayer(-1),
-      fMinRadTrack(132.) {
+DetectorK::DetectorK(char* name, char* title)
+  : TNamed(name, title),
+    fNumberOfLayers(0),
+    fNumberOfActiveLayers(0),
+    fNumberOfActiveITSLayers(0),
+    fBField(0.5),
+    fLhcUPCscale(1.0),
+    fIntegrationTime(0.02), // in ms
+    fConfLevel(0.0027),     // 0.27 % -> 3 sigma confidence
+    fAvgRapidity(0.45),     // Avg rapidity, MCS calc is a function of crossing angle
+    fParticleMass(0.140),   // Standard: pion mass
+    fMaxRadiusSlowDet(10.),
+    fAtLeastHits(-1), // if -1, then require hit on all ITS layers
+    fAtLeastCorr(-1), // if -1, then correct hit on all ITS layers
+    fAtLeastFake(1),  // if at least x fakes, track is considered fake ...
+    fMaxSeedRadius(50000),
+    fptScale(10.),
+    fdNdEtaCent(2200),
+    kDetLayer(-1),
+    fMinRadTrack(132.)
+{
   //
   // default constructor, that set the name and title
   //
   //  fLayers = new TObjArray();
 }
-DetectorK::~DetectorK() { //
+DetectorK::~DetectorK()
+{ //
   // virtual destructor
   //
   //  delete fLayers;
 }
 
-void DetectorK::EnablePhiRandomisation(Bool_t enable) {
+void DetectorK::EnablePhiRandomisation(Bool_t enable)
+{
   fUsePhiRandomisation = enable;
 }
 
-void DetectorK::AddLayer(char *name, Float_t radius, Float_t radL,
-                         Float_t phiRes, Float_t zRes, Float_t eff) {
+void DetectorK::AddLayer(char* name, Float_t radius, Float_t radL,
+                         Float_t phiRes, Float_t zRes, Float_t eff)
+{
   //
   // Add additional layer to the list of layers (ordered by radius)
   //
 
-  CylLayerK *newLayer = (CylLayerK *)fLayers.FindObject(name);
+  CylLayerK* newLayer = (CylLayerK*)fLayers.FindObject(name);
 
   if (!newLayer) {
     newLayer = new CylLayerK(name);
@@ -172,7 +193,7 @@ void DetectorK::AddLayer(char *name, Float_t radius, Float_t radL,
     else {
 
       for (Int_t i = 0; i < fLayers.GetEntries(); i++) {
-        CylLayerK *l = (CylLayerK *)fLayers.At(i);
+        CylLayerK* l = (CylLayerK*)fLayers.At(i);
         if (radius < l->radius) {
           fLayers.AddBefore(l, newLayer);
           break;
@@ -200,12 +221,13 @@ void DetectorK::AddLayer(char *name, Float_t radius, Float_t radL,
 //     fPhiGaps.Clear();  // Clears all stored φ-gaps
 // }
 
-void DetectorK::KillLayer(char *name) {
+void DetectorK::KillLayer(char* name)
+{
   //
   // Marks layer as dead. Contribution only by Material Budget
   //
 
-  CylLayerK *tmp = (CylLayerK *)fLayers.FindObject(name);
+  CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
   if (!tmp)
     printf("Layer %s not found - cannot mark as dead\n", name);
   else {
@@ -223,7 +245,7 @@ void DetectorK::KillLayer(char *name) {
 /*
 void DetectorK::KillLayerTemporarily(const char* name) {
 
- //introduce the option to temporarly kill a layer  
+ //introduce the option to temporarly kill a layer
 
   CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
   if (!tmp) {
@@ -270,7 +292,7 @@ void DetectorK::ResetTemporaryLayerFlags() {
     if (layer->isTempDead) {
       tempDeadCount++;
       if (layer->hasStoredDefaults) {
-      
+
           // Restore tracking parameters
        layer->phiRes    = layer->originalPhiRes;
        layer->zRes      = layer->originalZRes;
@@ -296,9 +318,10 @@ void DetectorK::ResetTemporaryLayerFlags() {
 
 */
 
-void DetectorK::KillLayerTemporarily(const char* name) {
+void DetectorK::KillLayerTemporarily(const char* name)
+{
 
- //introduce the option to temporarly kill a layer  
+  // introduce the option to temporarly kill a layer
 
   CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
   if (!tmp) {
@@ -309,57 +332,60 @@ void DetectorK::KillLayerTemporarily(const char* name) {
     tmp->isTempDead = kTRUE;
     fNumberOfActiveLayers -= 1;
     TString lname(tmp->GetName());
-    if (IsITSLayer(lname)) fNumberOfActiveITSLayers -= 1;
+    if (IsITSLayer(lname))
+      fNumberOfActiveITSLayers -= 1;
     if (DetectorK::verboseG) {
       printf("Layer %s marked as temporarily dead (φ-gap)\n", name);
     }
   }
 }
 
-void DetectorK::ResetTemporaryLayerFlags() {
+void DetectorK::ResetTemporaryLayerFlags()
+{
   fNumberOfActiveLayers = 0;
   fNumberOfActiveITSLayers = 0;
   int tempDeadCount = 0;
-   // Layer properties
-  Double_t x0IT     = 0.001; // 0.1%
-  Double_t x0OT     = 0.010; // 1%
-  Double_t resRPhiIT     = 0.00025;  //  2.5 mum
-  Double_t resZIT        = 0.00025;  //  2.5 mum
-  Double_t resRPhiOT     = 0.0010;   // 10 mum
-  Double_t resZOT        = 0.0010;   // 10 mum
-  Double_t eff           = 0.98;
+  // Layer properties
+  Double_t x0IT = 0.001;        // 0.1%
+  Double_t x0OT = 0.010;        // 1%
+  Double_t resRPhiIT = 0.00025; //  2.5 mum
+  Double_t resZIT = 0.00025;    //  2.5 mum
+  Double_t resRPhiOT = 0.0010;  // 10 mum
+  Double_t resZOT = 0.0010;     // 10 mum
+  Double_t eff = 0.98;
   for (int i = 0; i < fLayers.GetEntries(); ++i) {
     CylLayerK* layer = (CylLayerK*)fLayers.At(i);
 
-    if (!layer) continue;
-  
-   // if(!layer->isDead){
-    // Reset resolution and material to default values
-   // layer->phiRes    = layer->phiResDefault;
-   // layer->zRes      = layer->zResDefault;
-   // layer->radL      = layer->radLengthDefault;
-   // }
+    if (!layer)
+      continue;
 
-    if (layer->isTempDead){
+    // if(!layer->isDead){
+    // Reset resolution and material to default values
+    // layer->phiRes    = layer->phiResDefault;
+    // layer->zRes      = layer->zResDefault;
+    // layer->radL      = layer->radLengthDefault;
+    // }
+
+    if (layer->isTempDead) {
       tempDeadCount++;
-      }
-    printf("total number of DEAD LAYERS %d\n",tempDeadCount);
-    printf(" Layer %d: isTempDead=%d | phiRes=%.6f, zRes=%.6f, radLen=%.6f\n",i, layer->isTempDead, layer->phiRes, layer->zRes, layer->radL);
+    }
+    printf("total number of DEAD LAYERS %d\n", tempDeadCount);
+    printf(" Layer %d: isTempDead=%d | phiRes=%.6f, zRes=%.6f, radLen=%.6f\n", i, layer->isTempDead, layer->phiRes, layer->zRes, layer->radL);
     TString lname(layer->GetName());
-       // Restore resolution/material
-      if (lname.Contains("ddd0") || lname.EqualTo("ddd1") || lname.Contains("ddd2")) {
-    layer->phiRes = resRPhiIT;
-    layer->zRes   = resZIT;
-    layer->radL = x0IT;
-    printf("sono qui\n");  
-      } 
+    // Restore resolution/material
+    if (lname.Contains("ddd0") || lname.EqualTo("ddd1") || lname.Contains("ddd2")) {
+      layer->phiRes = resRPhiIT;
+      layer->zRes = resZIT;
+      layer->radL = x0IT;
+      printf("sono qui\n");
+    }
 
     layer->isTempDead = kFALSE;
     if (!layer->isDead) {
       fNumberOfActiveLayers++;
-     // TString lname(layer->GetName());
-      if (IsITSLayer(lname)) fNumberOfActiveITSLayers++;
-  
+      // TString lname(layer->GetName());
+      if (IsITSLayer(lname))
+        fNumberOfActiveITSLayers++;
     }
   }
   if (DetectorK::verboseG) {
@@ -367,14 +393,13 @@ void DetectorK::ResetTemporaryLayerFlags() {
   }
 }
 
-
-
-void DetectorK::SetRadius(char *name, Float_t radius) {
+void DetectorK::SetRadius(char* name, Float_t radius)
+{
   //
   // Set layer radius [cm]
   //
 
-  CylLayerK *tmp = (CylLayerK *)fLayers.FindObject(name);
+  CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
 
   if (!tmp) {
     printf("Layer %s not found - cannot set radius\n", name);
@@ -389,12 +414,13 @@ void DetectorK::SetRadius(char *name, Float_t radius) {
   }
 }
 
-Float_t DetectorK::GetRadius(char *name) {
+Float_t DetectorK::GetRadius(char* name)
+{
   //
   // Return layer radius [cm]
   //
 
-  CylLayerK *tmp = (CylLayerK *)fLayers.FindObject(name);
+  CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
   if (!tmp)
     printf("Layer %s not found - cannot get radius\n", name);
   else
@@ -403,12 +429,13 @@ Float_t DetectorK::GetRadius(char *name) {
   return 0;
 }
 
-void DetectorK::SetRadiationLength(char *name, Float_t radL) {
+void DetectorK::SetRadiationLength(char* name, Float_t radL)
+{
   //
   // Set layer material [cm]
   //
 
-  CylLayerK *tmp = (CylLayerK *)fLayers.FindObject(name);
+  CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
   if (!tmp)
     printf("Layer %s not found - cannot set layer material\n", name);
   else {
@@ -416,12 +443,13 @@ void DetectorK::SetRadiationLength(char *name, Float_t radL) {
   }
 }
 
-Float_t DetectorK::GetRadiationLength(char *name) {
+Float_t DetectorK::GetRadiationLength(char* name)
+{
   //
   // Return layer radius [cm]
   //
 
-  CylLayerK *tmp = (CylLayerK *)fLayers.FindObject(name);
+  CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
   if (!tmp)
     printf("Layer %s not found - cannot get layer material\n", name);
   else
@@ -430,12 +458,13 @@ Float_t DetectorK::GetRadiationLength(char *name) {
   return 0;
 }
 
-void DetectorK::SetResolution(char *name, Float_t phiRes, Float_t zRes) {
+void DetectorK::SetResolution(char* name, Float_t phiRes, Float_t zRes)
+{
   //
   // Set layer resolution in [cm]
   //
 
-  CylLayerK *tmp = (CylLayerK *)fLayers.FindObject(name);
+  CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
   if (!tmp)
     printf("Layer %s not found - cannot set resolution\n", name);
   else {
@@ -464,14 +493,15 @@ void DetectorK::SetResolution(char *name, Float_t phiRes, Float_t zRes) {
   }
 }
 
-Float_t DetectorK::GetResolution(char *name, Int_t axis) {
+Float_t DetectorK::GetResolution(char* name, Int_t axis)
+{
   //
   // Return layer resolution in [cm]
   // axis = 0: resolution in rphi
   // axis = 1: resolution in z
   //
 
-  CylLayerK *tmp = (CylLayerK *)fLayers.FindObject(name);
+  CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
   if (!tmp)
     printf("Layer %s not found - cannot get resolution\n", name);
   else {
@@ -484,12 +514,13 @@ Float_t DetectorK::GetResolution(char *name, Int_t axis) {
   return 0;
 }
 
-void DetectorK::SetLayerEfficiency(char *name, Float_t eff) {
+void DetectorK::SetLayerEfficiency(char* name, Float_t eff)
+{
   //
   // Set layer efficnecy (prop that his is missed within this layer)
   //
 
-  CylLayerK *tmp = (CylLayerK *)fLayers.FindObject(name);
+  CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
   if (!tmp)
     printf("Layer %s not found - cannot set layer efficiency\n", name);
   else {
@@ -497,12 +528,13 @@ void DetectorK::SetLayerEfficiency(char *name, Float_t eff) {
   }
 }
 
-Float_t DetectorK::GetLayerEfficiency(char *name) {
+Float_t DetectorK::GetLayerEfficiency(char* name)
+{
   //
   // Get layer efficnecy (prop that his is missed within this layer)
   //
 
-  CylLayerK *tmp = (CylLayerK *)fLayers.FindObject(name);
+  CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
   if (!tmp)
     printf("Layer %s not found - cannot get layer efficneicy\n", name);
   else
@@ -511,12 +543,13 @@ Float_t DetectorK::GetLayerEfficiency(char *name) {
   return 0;
 }
 
-void DetectorK::RemoveLayer(char *name) {
+void DetectorK::RemoveLayer(char* name)
+{
   //
   // Removes a layer from the list
   //
 
-  CylLayerK *tmp = (CylLayerK *)fLayers.FindObject(name);
+  CylLayerK* tmp = (CylLayerK*)fLayers.FindObject(name);
   if (!tmp)
     printf("Layer %s not found - cannot remove it\n", name);
   else {
@@ -533,18 +566,19 @@ void DetectorK::RemoveLayer(char *name) {
 }
 
 void DetectorK::ApplyShiftedPetalGapsToLayers(
-    const std::vector<TString> &layerNames,
-    const std::vector<double> &gapWidths, int nPetals, double phiShift) {
+  const std::vector<TString>& layerNames,
+  const std::vector<double>& gapWidths, int nPetals, double phiShift)
+{
   if (layerNames.size() != gapWidths.size()) {
     printf("Error: layerNames and gapWidths size mismatch!\n");
     return;
   }
 
   for (size_t i = 0; i < layerNames.size(); ++i) {
-    const TString &name = layerNames[i];
+    const TString& name = layerNames[i];
     double gapWidth = gapWidths[i];
 
-    CylLayerK *layer = (CylLayerK *)fLayers.FindObject(name);
+    CylLayerK* layer = (CylLayerK*)fLayers.FindObject(name);
     if (!layer) {
       printf("Warning: Layer '%s' not found. Skipping.\n", name.Data());
       continue;
@@ -554,7 +588,7 @@ void DetectorK::ApplyShiftedPetalGapsToLayers(
 
     for (int p = 0; p < nPetals; ++p) {
       double phi_start =
-          TVector2::Phi_0_2pi(phiShift + p * (2. * TMath::Pi() / nPetals));
+        TVector2::Phi_0_2pi(phiShift + p * (2. * TMath::Pi() / nPetals));
       double phi_end = TVector2::Phi_0_2pi(phi_start + gapWidth);
       layer->AddPhiGap(phi_start, phi_end);
     }
@@ -563,14 +597,16 @@ void DetectorK::ApplyShiftedPetalGapsToLayers(
   }
 }
 
-CylLayerK *DetectorK::FindLayer(char *name) const {
+CylLayerK* DetectorK::FindLayer(char* name) const
+{
   //
   // find layer by name
   //
-  return (CylLayerK *)fLayers.FindObject(name);
+  return (CylLayerK*)fLayers.FindObject(name);
 }
 
-CylLayerK *DetectorK::FindLayer(double r, int mode) const {
+CylLayerK* DetectorK::FindLayer(double r, int mode) const
+{
   //
   // find layer close to radius r
   // mode = 0: closest
@@ -581,7 +617,7 @@ CylLayerK *DetectorK::FindLayer(double r, int mode) const {
   int lrID = -1;
   int nLr = fLayers.GetEntries();
   for (Int_t i = fLayers.GetEntries(); i--;) {
-    CylLayerK *tmp = (CylLayerK *)fLayers.At(i);
+    CylLayerK* tmp = (CylLayerK*)fLayers.At(i);
     double dr = tmp->radius - r;
     if (TMath::Abs(dr) < TMath::Abs(drMin)) {
       drMin = dr;
@@ -591,14 +627,15 @@ CylLayerK *DetectorK::FindLayer(double r, int mode) const {
   if (lrID < 0)
     return 0;
   if (mode > 0 && drMin < 0)
-    return ++lrID < nLr ? (CylLayerK *)fLayers.At(lrID) : 0;
+    return ++lrID < nLr ? (CylLayerK*)fLayers.At(lrID) : 0;
   if (mode < 0 && drMin > 0)
-    return --lrID > 0 ? (CylLayerK *)fLayers.At(lrID) : 0;
-  return (CylLayerK *)fLayers.At(lrID);
+    return --lrID > 0 ? (CylLayerK*)fLayers.At(lrID) : 0;
+  return (CylLayerK*)fLayers.At(lrID);
   //
 }
 
-Int_t DetectorK::FindLayerID(double r, int mode) const {
+Int_t DetectorK::FindLayerID(double r, int mode) const
+{
   //
   // find layer ID close to radius r
   // mode = 0: closest
@@ -609,7 +646,7 @@ Int_t DetectorK::FindLayerID(double r, int mode) const {
   int lrID = -1;
   int nLr = fLayers.GetEntries();
   for (Int_t i = fLayers.GetEntries(); i--;) {
-    CylLayerK *tmp = (CylLayerK *)fLayers.At(i);
+    CylLayerK* tmp = (CylLayerK*)fLayers.At(i);
     double dr = tmp->radius - r;
     if (TMath::Abs(dr) < TMath::Abs(drMin)) {
       drMin = dr;
@@ -626,7 +663,8 @@ Int_t DetectorK::FindLayerID(double r, int mode) const {
   //
 }
 
-void DetectorK::PrintLayout(Bool_t full) {
+void DetectorK::PrintLayout(Bool_t full)
+{
   //
   // Prints the detector layout
   //
@@ -636,9 +674,9 @@ void DetectorK::PrintLayout(Bool_t full) {
   if (fLayers.GetEntries() > 0)
     printf("  Name \t\t r [cm] \t  X0 \t  phi & z res [um] layerEff \n");
 
-  CylLayerK *tmp = 0;
+  CylLayerK* tmp = 0;
   for (Int_t i = 0; i < fLayers.GetEntries(); i++) {
-    tmp = (CylLayerK *)fLayers.At(i);
+    tmp = (CylLayerK*)fLayers.At(i);
 
     // don't print all the tpc layers
     TString name(tmp->GetName());
@@ -663,34 +701,35 @@ void DetectorK::PrintLayout(Bool_t full) {
   }
 }
 
-void DetectorK::PlotLayout(Int_t plotDead) {
+void DetectorK::PlotLayout(Int_t plotDead)
+{
   //
   // Plots the detector layout in Front view
   //
 
   Double_t x0 = 0, y0 = 0;
 
-  TGraphErrors *gr = new TGraphErrors();
+  TGraphErrors* gr = new TGraphErrors();
   gr->SetPoint(0, 0, 0);
-  CylLayerK *lastLayer = (CylLayerK *)fLayers.At(fLayers.GetEntries() - 1);
+  CylLayerK* lastLayer = (CylLayerK*)fLayers.At(fLayers.GetEntries() - 1);
   Double_t maxRad = lastLayer->radius;
   gr->SetPointError(0, maxRad, maxRad);
   gr->Draw("APE");
 
-  CylLayerK *tmp = 0;
+  CylLayerK* tmp = 0;
   for (Int_t i = fLayers.GetEntries() - 1; i >= 0; i--) {
-    tmp = (CylLayerK *)fLayers.At(i);
+    tmp = (CylLayerK*)fLayers.At(i);
 
     Double_t txtpos = tmp->radius;
     if ((tmp->isDead))
       txtpos *= -1; //
-    TText *txt = new TText(x0, txtpos, tmp->GetName());
+    TText* txt = new TText(x0, txtpos, tmp->GetName());
     txt->SetTextSizePixels(5);
     txt->SetTextAlign(21);
     if (!tmp->isDead || plotDead)
       txt->Draw();
 
-    TEllipse *layEl = new TEllipse(x0, y0, tmp->radius);
+    TEllipse* layEl = new TEllipse(x0, y0, tmp->radius);
     //  layEl->SetFillColor(5);
     layEl->SetFillStyle(5001);
     layEl->SetLineStyle(tmp->isDead + 1); // dashed if not active
@@ -708,14 +747,15 @@ void DetectorK::PlotLayout(Int_t plotDead) {
   }
 }
 
-void DetectorK::AddTPC(Float_t phiResMean, Float_t zResMean, Int_t skip) {
+void DetectorK::AddTPC(Float_t phiResMean, Float_t zResMean, Int_t skip)
+{
   //
   // Emulates the TPC
   //
   // skip=1: Use every padrow, skip=2: Signal in every 2nd padrow
 
-  AddLayer((char *)"tpcIFC", 77.8, 0.01367);  // Inner Field cage
-  AddLayer((char *)"tpcOFC", 254.0, 0.01367); // Outer Field cage
+  AddLayer((char*)"tpcIFC", 77.8, 0.01367);  // Inner Field cage
+  AddLayer((char*)"tpcOFC", 254.0, 0.01367); // Outer Field cage
 
   // % Radiation Lengths ... Average per TPC row  (i.e. total/159 )
   const int kNPassiveBound = 2;
@@ -753,7 +793,7 @@ void DetectorK::AddTPC(Float_t phiResMean, Float_t zResMean, Int_t skip) {
       rowRadius = row64Radius + (k - innerRows + 1) * tpcMiddleRadialPitch;
     else if (k >= (innerRows + middleRows) && k < tpcRows)
       rowRadius =
-          row128Radius + (k - innerRows - middleRows + 1) * tpcOuterRadialPitch;
+        row128Radius + (k - innerRows - middleRows + 1) * tpcOuterRadialPitch;
 
     if (k % skip == 0)
       AddLayer(Form("tpc_%d", k), rowRadius, radLPerRow, phiResMean, zResMean);
@@ -762,33 +802,35 @@ void DetectorK::AddTPC(Float_t phiResMean, Float_t zResMean, Int_t skip) {
   }
 }
 
-void DetectorK::AddTRD(Float_t phiResMean, Float_t zResMean, Float_t lrEff) {
+void DetectorK::AddTRD(Float_t phiResMean, Float_t zResMean, Float_t lrEff)
+{
   //
   // Emulates the TRD
   //
   const double trdX2X0 = 3.3e-2;
   for (int i = 0; i < 6; i++)
-    AddLayer((char *)Form("trd_%d", i), 300.0 + 13 * i, trdX2X0, phiResMean,
+    AddLayer((char*)Form("trd_%d", i), 300.0 + 13 * i, trdX2X0, phiResMean,
              zResMean, lrEff < 1 ? lrEff : 1.0);
 }
 
-void DetectorK::RemoveTPC() {
+void DetectorK::RemoveTPC()
+{
 
   // flag as dead, although resolution is ok ... makes live easier in the prints
   // ... ;-)
-  CylLayerK *tmp = 0;
+  CylLayerK* tmp = 0;
   for (Int_t i = 0; i < fLayers.GetEntries(); i++) {
-    tmp = (CylLayerK *)fLayers.At(i);
+    tmp = (CylLayerK*)fLayers.At(i);
     TString name(tmp->GetName());
     if (name.Contains("tpc")) {
-      RemoveLayer((char *)name.Data());
+      RemoveLayer((char*)name.Data());
       i--;
     }
   }
 }
 
-Double_t DetectorK::ThetaMCS(Double_t mass, Double_t radLength,
-                             Double_t momentum) const {
+Double_t DetectorK::ThetaMCS(Double_t mass, Double_t radLength, Double_t momentum) const
+{
   //
   // returns the Multiple Couloumb scattering angle (compare PDG boolet, 2010,
   // equ. 27.14)
@@ -804,22 +846,22 @@ Double_t DetectorK::ThetaMCS(Double_t mass, Double_t radLength,
   return (theta);
 }
 
-Double_t DetectorK::ProbGoodHit(Double_t radius, Double_t searchRadiusRPhi,
-                                Double_t searchRadiusZ) {
+Double_t DetectorK::ProbGoodHit(Double_t radius, Double_t searchRadiusRPhi, Double_t searchRadiusZ)
+{
   // Based on work by Howard Wieman: http://rnc.lbl.gov/~wieman/GhostTracks.htm
   // and http://rnc.lbl.gov/~wieman/HitFinding2D.htm
   // This is the probability of getting a good hit using 2D Gaussian
   // distribution function and infinite search radius
   Double_t sx, sy, goodHit;
-  sx = 2 * TMath::Pi() * searchRadiusRPhi * searchRadiusRPhi *
-       HitDensity(radius);
+  sx = 2 * TMath::Pi() * searchRadiusRPhi * searchRadiusRPhi * HitDensity(radius);
   sy = 2 * TMath::Pi() * searchRadiusZ * searchRadiusZ * HitDensity(radius);
   goodHit = TMath::Sqrt(1. / ((1 + sx) * (1 + sy)));
   return (goodHit);
 }
 
 Double_t DetectorK::ProbGoodChiSqHit(Double_t radius, Double_t searchRadiusRPhi,
-                                     Double_t searchRadiusZ) {
+                                     Double_t searchRadiusZ)
+{
   // Based on work by Victor Perevoztchikov and Howard Wieman:
   // http://rnc.lbl.gov/~wieman/HitFinding2DXsq.htm This is the probability of
   // getting a good hit using a Chi**2 search on a 2D Gaussian distribution
@@ -832,40 +874,36 @@ Double_t DetectorK::ProbGoodChiSqHit(Double_t radius, Double_t searchRadiusRPhi,
 
 Double_t DetectorK::ProbGoodChiSqPlusConfHit(Double_t radius, Double_t leff,
                                              Double_t searchRadiusRPhi,
-                                             Double_t searchRadiusZ) {
+                                             Double_t searchRadiusZ)
+{
   // Based on work by Ruben Shahoyen
   // This is the probability of getting a good hit using a Chi**2 search on a 2D
   // Gaussian distribution function Plus, in addition, taking a "confidence
   // level" and the "layer efficiency" into account Following is correct for 2
   // DOF
 
-  Double_t c =
-      -2 * TMath::Log(fConfLevel); // quantile at cut of confidence level
-  Double_t alpha = (1 + 2 * TMath::Pi() * HitDensity(radius) *
-                            searchRadiusRPhi * searchRadiusZ) /
-                   2;
+  Double_t c = -2 * TMath::Log(fConfLevel); // quantile at cut of confidence level
+  Double_t alpha = (1 + 2 * TMath::Pi() * HitDensity(radius) * searchRadiusRPhi * searchRadiusZ) / 2;
   Double_t goodHit = leff / (2 * alpha) * (1 - TMath::Exp(-alpha * c));
   return (goodHit);
 }
 
 Double_t DetectorK::ProbNullChiSqPlusConfHit(Double_t radius, Double_t leff,
                                              Double_t searchRadiusRPhi,
-                                             Double_t searchRadiusZ) {
+                                             Double_t searchRadiusZ)
+{
   // Based on work by Ruben Shahoyen
   // This is the probability to not have any match to the track (see also
   // :ProbGoodChiSqPlusConfHit:)
 
-  Double_t c =
-      -2 * TMath::Log(fConfLevel); // quantile at cut of confidence level
-  Double_t alpha = (1 + 2 * TMath::Pi() * HitDensity(radius) *
-                            searchRadiusRPhi * searchRadiusZ) /
-                   2;
-  Double_t nullHit =
-      (1 - leff + fConfLevel * leff) * TMath::Exp(-c * (alpha - 1. / 2));
+  Double_t c = -2 * TMath::Log(fConfLevel); // quantile at cut of confidence level
+  Double_t alpha = (1 + 2 * TMath::Pi() * HitDensity(radius) * searchRadiusRPhi * searchRadiusZ) / 2;
+  Double_t nullHit = (1 - leff + fConfLevel * leff) * TMath::Exp(-c * (alpha - 1. / 2));
   return (nullHit);
 }
 
-Double_t DetectorK::HitDensity(Double_t radius) {
+Double_t DetectorK::HitDensity(Double_t radius)
+{
   // Background (0-1) is included via 'OtherBackground' which multiplies the
   // minBias rate by a scale factor. UPC electrons is a temporary kludge that is
   // based on Kai Schweda's summary of Kai Hainken's MC results See K. Hencken
@@ -880,12 +918,12 @@ Double_t DetectorK::HitDensity(Double_t radius) {
 
   if (radius > fMaxRadiusSlowDet) {
     arealDensity = OneEventHitDensity(
-        fdNdEtaCent,
-        radius); // Fast detectors see central collision density (only)
+      fdNdEtaCent,
+      radius); // Fast detectors see central collision density (only)
     arealDensity +=
-        OtherBackground *
-        OneEventHitDensity(dNdEtaMinB,
-                           radius); // Increase density due to background
+      OtherBackground *
+      OneEventHitDensity(dNdEtaMinB,
+                         radius); // Increase density due to background
   }
 
   if (radius < fMaxRadiusSlowDet) { // Note that IntegratedHitDensity will
@@ -902,7 +940,8 @@ Double_t DetectorK::HitDensity(Double_t radius) {
 }
 
 double DetectorK::OneEventHitDensity(Double_t multiplicity,
-                                     Double_t radius) const {
+                                     Double_t radius) const
+{
   // This is for one event at the vertex.  No smearing.
 
   double den = multiplicity / (2. * TMath::Pi() * radius * radius); // 2 eta ?
@@ -916,7 +955,8 @@ double DetectorK::OneEventHitDensity(Double_t multiplicity,
   return den;
 }
 
-double DetectorK::IntegratedHitDensity(Double_t multiplicity, Double_t radius) {
+double DetectorK::IntegratedHitDensity(Double_t multiplicity, Double_t radius)
+{
   // The integral of minBias events smeared over a gaussian vertex distribution.
   // Based on work by Yan Lu 12/20/2006, all radii in centimeters.
 
@@ -936,7 +976,8 @@ double DetectorK::IntegratedHitDensity(Double_t multiplicity, Double_t radius) {
   return den;
 }
 
-double DetectorK::UpcHitDensity(Double_t radius) {
+double DetectorK::UpcHitDensity(Double_t radius)
+{
   // QED electrons ...
 
   Double_t mUPCelectrons;
@@ -947,17 +988,18 @@ double DetectorK::UpcHitDensity(Double_t radius) {
                   dNdEtaMinB; // Fit to 'Rossegger,Sadovsky'-Alice simulation
   if (mUPCelectrons < 0)
     mUPCelectrons =
-        0.0; // UPC electrons fall off quickly and don't go to large R
+      0.0; // UPC electrons fall off quickly and don't go to large R
   mUPCelectrons *= IntegratedHitDensity(
-      dNdEtaMinB,
-      radius); // UPCs increase Mulitiplicty ~ proportional to MinBias rate
+    dNdEtaMinB,
+    radius);                                // UPCs increase Mulitiplicty ~ proportional to MinBias rate
   mUPCelectrons *= UPCBackgroundMultiplier; // Allow for an external multiplier
                                             // (eg 0-1) to turn off UPC
 
   return mUPCelectrons;
 }
 
-double DetectorK::Dist(double z, double r) {
+double DetectorK::Dist(double z, double r)
+{
   // Convolute dEta/dZ  distribution with assumed Gaussian of vertex z
   // distribution Based on work by Howard Wieman
   // http://rnc.lbl.gov/~wieman/HitDensityMeasuredLuminosity7.htm Based on work
@@ -982,13 +1024,13 @@ double DetectorK::Dist(double z, double r) {
   return dist;
 }
 
-#define PZero 0.861 // Momentum of back to back decay particles in the CM frame
+#define PZero 0.861   // Momentum of back to back decay particles in the CM frame
 #define EPiZero 0.872 // Energy of the pion from a D0 decay at rest
 #define EKZero 0.993  // Energy of the Kaon from a D0 decay at rest
 
-Double_t
-DetectorK::D0IntegratedEfficiency(Double_t pt,
-                                  Double_t corrEfficiency[][400]) const {
+Double_t DetectorK::D0IntegratedEfficiency(Double_t pt,
+                                           Double_t corrEfficiency[][400]) const
+{
   // Math from Ron Longacre.  Note hardwired energy to bin conversion for PtK
   // and PtPi.
 
@@ -1003,14 +1045,14 @@ DetectorK::D0IntegratedEfficiency(Double_t pt,
     Double_t theta = k * TMath::Pi() / 180.;
 
     ptPi =
-        TMath::Sqrt(PZero * PZero * TMath::Cos(theta) * TMath::Cos(theta) *
-                        const2 * const2 +
-                    const1 * const1 * EPiZero * EPiZero -
-                    2 * PZero * TMath::Cos(theta) * const2 * const1 * EPiZero +
-                    PZero * PZero * TMath::Sin(theta) * TMath::Sin(theta));
+      TMath::Sqrt(PZero * PZero * TMath::Cos(theta) * TMath::Cos(theta) *
+                    const2 * const2 +
+                  const1 * const1 * EPiZero * EPiZero -
+                  2 * PZero * TMath::Cos(theta) * const2 * const1 * EPiZero +
+                  PZero * PZero * TMath::Sin(theta) * TMath::Sin(theta));
 
     ptK = TMath::Sqrt(PZero * PZero * TMath::Cos(theta) * TMath::Cos(theta) *
-                          const2 * const2 +
+                        const2 * const2 +
                       const1 * const1 * EKZero * EKZero +
                       2 * PZero * TMath::Cos(theta) * const2 * const1 * EKZero +
                       PZero * PZero * TMath::Sin(theta) * TMath::Sin(theta));
@@ -1049,8 +1091,8 @@ DetectorK::D0IntegratedEfficiency(Double_t pt,
   return mean;
 }
 
-void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
-                                Double_t meanPt, char *detLayer) {
+void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt, Double_t meanPt, char* detLayer)
+{
   //
   // Solves the current geometry with the Billoir technique
   // ( see P. Billoir, Nucl. Instr. and Meth. 225 (1984), p. 352. )
@@ -1072,48 +1114,45 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
   // #phi in ddd1", 60, 0, 2*TMath::Pi()); static TH1F* hPhiRejected_ddd2 = new
   // TH1F("hPhiRejected_ddd2", "Rejected #phi in ddd2", 60, 0, 2*TMath::Pi());
 
-  TH1F *hPhiAccepted = nullptr;
-  TH1F *hPhiRejected = nullptr;
-  TH1F *hPhiRejected_layer0 = nullptr;
-  TH1F *hPhiRejected_layer1 = nullptr;
-  TH1F *hPhiRejected_layer2 = nullptr;
+  TH1F* hPhiAccepted = nullptr;
+  TH1F* hPhiRejected = nullptr;
+  TH1F* hPhiRejected_layer0 = nullptr;
+  TH1F* hPhiRejected_layer1 = nullptr;
+  TH1F* hPhiRejected_layer2 = nullptr;
   if (hPhiRejected) {
     hPhiRejected->Reset();
     printf(" hPhiRejected reset\n");
   }
-    if (hPhiRejected_layer0) {
+  if (hPhiRejected_layer0) {
     hPhiRejected_layer0->Reset();
     printf(" hPhiRejected layer 0 reset\n");
   }
-    if (hPhiRejected_layer1) {
+  if (hPhiRejected_layer1) {
     hPhiRejected_layer1->Reset();
     printf(" hPhiRejected layer 1 reset\n");
   }
-    if (hPhiRejected_layer2) {
+  if (hPhiRejected_layer2) {
     hPhiRejected_layer2->Reset();
     printf(" hPhiRejected layer 2 reset\n");
   }
- 
- 
 
   //	if (fUsePhiRandomisation) {
   hPhiAccepted = new TH1F("hPhiAccepted_phiGaps",
                           "Accepted #phi after IsInGap;#phi [rad];Tracks", 180,
                           0, 2 * TMath::Pi());
 
-  hPhiRejected =
-      new TH1F("hPhiRejected_phiGaps", "Rejected #phi in gap;#phi [rad];Tracks",
-               180, 0, 2 * TMath::Pi());
+  hPhiRejected = new TH1F("hPhiRejected_phiGaps", "Rejected #phi in gap;#phi [rad];Tracks",
+                          180, 0, 2 * TMath::Pi());
 
   hPhiRejected_layer0 =
-      new TH1F("hPhiRejected_phiGaps_layer0", "Rejected #phi in gap;#phi [rad];Tracks",
-               180, 0, 2 * TMath::Pi());
+    new TH1F("hPhiRejected_phiGaps_layer0", "Rejected #phi in gap;#phi [rad];Tracks",
+             180, 0, 2 * TMath::Pi());
   hPhiRejected_layer1 =
-      new TH1F("hPhiRejected_phiGaps_layer1", "Rejected #phi in gap;#phi [rad];Tracks",
-               180, 0, 2 * TMath::Pi());
+    new TH1F("hPhiRejected_phiGaps_layer1", "Rejected #phi in gap;#phi [rad];Tracks",
+             180, 0, 2 * TMath::Pi());
   hPhiRejected_layer2 =
-      new TH1F("hPhiRejected_phiGaps_layer2", "Rejected #phi in gap;#phi [rad];Tracks",
-               180, 0, 2 * TMath::Pi());
+    new TH1F("hPhiRejected_phiGaps_layer2", "Rejected #phi in gap;#phi [rad];Tracks",
+             180, 0, 2 * TMath::Pi());
 
   //}
 
@@ -1159,44 +1198,45 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
   printf("N ITS Layers: %d\n", fNumberOfActiveITSLayers);
 
   TMatrixD probLay(base, fNumberOfActiveITSLayers);
-    // Initialize all with null hits
+  // Initialize all with null hits
   for (Int_t iL = 0; iL < fNumberOfActiveITSLayers; iL++) {
-     probLay(0, iL) = 1.0; // null
-     probLay(1, iL) = 0.0; // fake
-     probLay(2, iL) = 0.0; // corr
-  } 
+    probLay(0, iL) = 1.0; // null
+    probLay(1, iL) = 0.0; // fake
+    probLay(2, iL) = 0.0; // corr
+  }
 
   TMatrixD probKomb(komb, nLayer);
   for (Int_t num = 0; num < komb; num++) {
     for (Int_t l = nLayer; l--;) {
       Int_t pow = ((Int_t)TMath::Power(base, l + 1));
       probKomb(num, nLayer - 1 - l) =
-          (num % pow) / ((Int_t)TMath::Power(base, l));
+        (num % pow) / ((Int_t)TMath::Power(base, l));
     }
   }
 
   TString detLayerStr(detLayer);
-  CylLayerK *theLayer = (CylLayerK *)fLayers.FindObject(detLayer);
+  CylLayerK* theLayer = (CylLayerK*)fLayers.FindObject(detLayer);
   if (!theLayer && detLayerStr.IsNull() != 1) {
-    printf("Error: Layer with the name \"%s\" not found -> no detailed infos "
-           "possible\n",
-           detLayer);
+    printf(
+      "Error: Layer with the name \"%s\" not found -> no detailed infos "
+      "possible\n",
+      detLayer);
     return;
   }
 
   for (Int_t i = 0; i < fLayers.GetEntries(); i++) {
-    CylLayerK *l = (CylLayerK *)fLayers.At(i);
+    CylLayerK* l = (CylLayerK*)fLayers.At(i);
     if (detLayerStr.CompareTo(l->GetName()) == 0) { // is the same
       kDetLayer = i;
       break;
     }
   }
 
-  CylLayerK *last = (CylLayerK *)fLayers.At((fLayers.GetEntries() - 1));
+  CylLayerK* last = (CylLayerK*)fLayers.At((fLayers.GetEntries() - 1));
   if (last->radius > fMinRadTrack) {
     last = 0;
     for (Int_t i = 0; i < fLayers.GetEntries(); i++) {
-      CylLayerK *l = (CylLayerK *)fLayers.At(i);
+      CylLayerK* l = (CylLayerK*)fLayers.At(i);
       if (!(l->isDead) && (l->radius < fMinRadTrack))
         last = l;
     }
@@ -1206,14 +1246,14 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
     }
   }
 
-  //ResetTemporaryLayerFlags();
+  // ResetTemporaryLayerFlags();
 
   printf("Last layer radius: %f\n", last->radius);
 
   Double_t bigRad =
-      0.5 * last->radius; // min. pt which the algorithm below could handle
+    0.5 * last->radius; // min. pt which the algorithm below could handle
   double ptmin =
-      (0.3 * bigRad * TMath::Abs(fBField) * 1e-2) + 0.005; // safety margin
+    (0.3 * bigRad * TMath::Abs(fBField) * 1e-2) + 0.005; // safety margin
   if (ptmin < kPtMinFix)
     ptmin = kPtMinFix;
   double ptmax = kPtMaxFix;
@@ -1225,12 +1265,12 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
 
     // PseudoRapidity OK, used as an angle
     lambda =
-        TMath::Pi() / 2.0 - 2.0 * TMath::ATan(TMath::Exp(-1 * fAvgRapidity));
+      TMath::Pi() / 2.0 - 2.0 * TMath::ATan(TMath::Exp(-1 * fAvgRapidity));
 
     for (Int_t i = 0; i < nPt; i++) { // pt loop
 
-    ResetTemporaryLayerFlags();
-    Int_t counterLayersWithTrackInGap = 0;
+      ResetTemporaryLayerFlags();
+      Int_t counterLayersWithTrackInGap = 0;
 
       // Starting values based on radius of outermost layer ... log10 steps to
       // ~20 GeV
@@ -1252,9 +1292,13 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
       pt = fTransMomenta[i];        // GeV/c
       printf("pT: %f\n", pt);
       // if (pt < 0.1) continue;
-      tgl = TMath::Tan(lambda);          // dip
-      charge = -1;                       // Assume an electron
-      enum { kY, kZ, kSnp, kTgl, kPtI }; // track parameter aliases
+      tgl = TMath::Tan(lambda); // dip
+      charge = -1;              // Assume an electron
+      enum { kY,
+             kZ,
+             kSnp,
+             kTgl,
+             kPtI }; // track parameter aliases
       enum {
         kY2,
         kYZ,
@@ -1293,23 +1337,23 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
 
       probTr.Reset();
 
-      //double phiShift = 0.7; //remove to have phiShift passed by testDetector
+      // double phiShift = 0.7; //remove to have phiShift passed by testDetector
       double phiShift = fPhiShift;
       if (fUsePhiRandomisation) {
-        //phiShift = gRandom->Uniform(0.5,1.0);
-        //phiShift = gRandom->Uniform(0., 2 * TMath::Pi());
+        // phiShift = gRandom->Uniform(0.5,1.0);
+        // phiShift = gRandom->Uniform(0., 2 * TMath::Pi());
         printf("fUsePhiRandomisation, phi = %f\n", phiShift);
 
-        for (const auto &name : {"ddd0", "ddd1", "ddd2", "wall0", "wall01", "wall12"}) {
-          CylLayerK *layer = (CylLayerK *)fLayers.FindObject(name);
+        for (const auto& name : {"ddd0", "ddd1", "ddd2", "wall0", "wall01", "wall12"}) {
+          CylLayerK* layer = (CylLayerK*)fLayers.FindObject(name);
           if (layer)
             layer->PrintGaps(phiShift);
         }
       }
 
       // gRandom->Uniform(0., 2 * TMath::Pi());
-      double *trPars = (double *)probTr.GetParameter();
-      double *trCov = (double *)probTr.GetCovariance();
+      double* trPars = (double*)probTr.GetParameter();
+      double* trCov = (double*)probTr.GetCovariance();
       // double phi_loc, snp;
       // do{
       //  1. Generate uniform phi
@@ -1335,17 +1379,17 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
       //
       // put tiny errors to propagate to the outer radius
       trCov[kY2] = trCov[kZ2] = trCov[kSnp2] = trCov[kTgl2] = trCov[kPtI2] =
-          1e-9;
+        1e-9;
 
       // find max layer this track can reach
       double rmx = (TMath::Abs(fBField) > 1e-5)
-                       ? pt * 100. / (0.3 * TMath::Abs(fBField))
-                       : 9999;
+                     ? pt * 100. / (0.3 * TMath::Abs(fBField))
+                     : 9999;
       Int_t lastActiveLayer = -1;
       for (Int_t j = fLayers.GetEntries(); j--;) {
-        CylLayerK *l = (CylLayerK *)fLayers.At(j);
+        CylLayerK* l = (CylLayerK*)fLayers.At(j);
         //	printf("at lr %d r: %f vs %f, pt:%f\n",j,l->radius,
-        //2*rmx-2.*kTrackingMargin, pt);
+        // 2*rmx-2.*kTrackingMargin, pt);
         if (!(l->isDead) && (l->radius < 2 * (rmx - 5.))) {
           lastActiveLayer = j;
           last = l;
@@ -1380,7 +1424,7 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
       //
       // Back-propagate the covariance matrix along the track.
 
-      CylLayerK *layer = 0;
+      CylLayerK* layer = 0;
 
       /* remove
       // find last "active layer" - start tracking at the last active layer
@@ -1396,14 +1440,14 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
       //      probTr.Print();
       for (Int_t j = lastActiveLayer + 1; j--;) { // Layer loop
 
-        layer = (CylLayerK *)fLayers.At(j);
+        layer = (CylLayerK*)fLayers.At(j);
 
-        //layer->isTempDead = kFALSE;
+        // layer->isTempDead = kFALSE;
 
-       //  double phiRes_orig = layer->phiRes;
-       //  double zRes_orig   = layer->zRes;
-       //  double radLength_orig = layer->radL;
-       // printf("Layer %d, phiRes_orig %f, zRes_orig %f,radLength_orig %f\n ",j, phiRes_orig, zRes_orig, radLength_orig );
+        //  double phiRes_orig = layer->phiRes;
+        //  double zRes_orig   = layer->zRes;
+        //  double radLength_orig = layer->radL;
+        // printf("Layer %d, phiRes_orig %f, zRes_orig %f,radLength_orig %f\n ",j, phiRes_orig, zRes_orig, radLength_orig );
 
         if (layer->radius > fMaxSeedRadius)
           continue; // no seeding beyond this radius
@@ -1419,25 +1463,30 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
           double pos[3];
           probTr.GetXYZ(pos); // lab position
           double phi = TMath::ATan2(pos[1], pos[0]);
-          printf("phi:%+.5f of layer at %.2f at XYZ: %+.3f %+.3f %+.3f "
-                 "(pt=%+.3f)\n",
-                 phi, layer->radius, pos[0], pos[1], pos[2], pt);
+          printf(
+            "phi:%+.5f of layer at %.2f at XYZ: %+.3f %+.3f %+.3f "
+            "(pt=%+.3f)\n",
+            phi, layer->radius, pos[0], pos[1], pos[2], pt);
           // if (layer->IsInGap(phi)) {
           //  if (DetectorK::verboseR)
           //	 printf("Track at phi=%.2f lies in a phi gap of layer %s,
-          //skipping.\n", phi, layer->GetName()); continue; // Skip this layer
+          // skipping.\n", phi, layer->GetName()); continue; // Skip this layer
           //	}
           //
           TString lname = layer->GetName();
-          //if (!lname.Contains("wall")){
+          // if (!lname.Contains("wall")){
           if (layer->IsInGap(phi, phiShift)) {
-            //TString lname = layer->GetName();
+            // TString lname = layer->GetName();
             hPhiRejected->Fill(phi + phiShift);
-             if (lname == "ddd0") hPhiRejected_layer0->Fill(phi+phiShift);
-        	    else if (lname == "ddd1") hPhiRejected_layer1->Fill(phi+phiShift);
-      			  else if (lname == "ddd2") hPhiRejected_layer2->Fill(phi+phiShift);
+            if (lname == "ddd0")
+              hPhiRejected_layer0->Fill(phi + phiShift);
+            else if (lname == "ddd1")
+              hPhiRejected_layer1->Fill(phi + phiShift);
+            else if (lname == "ddd2")
+              hPhiRejected_layer2->Fill(phi + phiShift);
             // rejected track φ
-              if (lname == "ddd0" || lname == "ddd1" || lname == "ddd2") counterLayersWithTrackInGap++;
+            if (lname == "ddd0" || lname == "ddd1" || lname == "ddd2")
+              counterLayersWithTrackInGap++;
 
             if (DetectorK::verboseG) {
               printf("IsInGap with phi %f + phiShift %f\n", phi, phiShift);
@@ -1447,42 +1496,41 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
             // continue;
             printf("layer name to be killed %s\n", layer->GetName());
             // KillLayer((char*)layer->GetName());
-            
+
             KillLayerTemporarily((char*)layer->GetName());
-            //layer->isTempDead = kTRUE;
-            // printf("GAP HIT → Layer %s: phi = %.3f + shift = %.3f | orig phiRes=%.6f, zRes=%.6f, radL=%.6f\n", layer->GetName(), phi, phiShift, phiRes_orig, zRes_orig, radLength_orig);
-            
-            //Mask the layer
-             layer->phiRes = 999999;
-             layer->zRes = 999999;
-             layer->radL = 0;
-           } else {
-            hPhiAccepted->Fill(phi); 
-            //layer->phiRes    = phiRes_orig;
-            //layer->zRes      = zRes_orig;
-            //layer->radL = radLength_orig;
-            }// accepted track φ  
+            // layer->isTempDead = kTRUE;
+            //  printf("GAP HIT → Layer %s: phi = %.3f + shift = %.3f | orig phiRes=%.6f, zRes=%.6f, radL=%.6f\n", layer->GetName(), phi, phiShift, phiRes_orig, zRes_orig, radLength_orig);
+
+            // Mask the layer
+            layer->phiRes = 999999;
+            layer->zRes = 999999;
+            layer->radL = 0;
+          } else {
+            hPhiAccepted->Fill(phi);
+            // layer->phiRes    = phiRes_orig;
+            // layer->zRes      = zRes_orig;
+            // layer->radL = radLength_orig;
+          } // accepted track φ
 
           //}
 
-
-         // if (!layer->isTempDead) { 
-         //     layer->phiRes    = phiRes_orig;
-         //     layer->zRes      = zRes_orig;
-         //     layer->radL = radLength_orig;
-         // }
-            /*
-         if (!layer->isTempDead) {
-            layer->phiRes;
-            layer->zRes;
-            layer->radL;
-         }
-         // if (layer->isTempDead) continue;
-            if (layer->isTempDead) {
-             layer->phiRes = 999999;
-             layer->zRes = 999999;
-             layer->radL = 0;
-             }
+          // if (!layer->isTempDead) {
+          //     layer->phiRes    = phiRes_orig;
+          //     layer->zRes      = zRes_orig;
+          //     layer->radL = radLength_orig;
+          // }
+          /*
+       if (!layer->isTempDead) {
+          layer->phiRes;
+          layer->zRes;
+          layer->radL;
+       }
+       // if (layer->isTempDead) continue;
+          if (layer->isTempDead) {
+           layer->phiRes = 999999;
+           layer->zRes = 999999;
+           layer->radL = 0;
+           }
 */
           double epsilon = 1e-6;
 
@@ -1492,9 +1540,10 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
           if (TMath::Abs(TMath::Abs(phi) - TMath::Pi() / 2) < 1e-3)
             phi = TMath::Sign(TMath::Pi() / 2 - 1e-3, phi);
           if (!probTr.Rotate(phi)) {
-            printf("Failed to rotate to the frame (phi:%+.5f)of layer at %.2f "
-                   "at XYZ: %+.3f %+.3f %+.3f (pt=%+.3f)\n",
-                   phi, layer->radius, pos[0], pos[1], pos[2], pt);
+            printf(
+              "Failed to rotate to the frame (phi:%+.5f)of layer at %.2f "
+              "at XYZ: %+.3f %+.3f %+.3f (pt=%+.3f)\n",
+              phi, layer->radius, pos[0], pos[1], pos[2], pt);
 
             probTr.Print();
             exit(1);
@@ -1510,9 +1559,9 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
         //	*/
         // save resolutions at this layer
         fDetPointRes[j][i] =
-            TMath::Sqrt(probTr.GetSigmaY2()) / 100; // result in meters
+          TMath::Sqrt(probTr.GetSigmaY2()) / 100; // result in meters
         fDetPointZRes[j][i] =
-            TMath::Sqrt(probTr.GetSigmaZ2()) / 100; // result in meters
+          TMath::Sqrt(probTr.GetSigmaZ2()) / 100; // result in meters
         // printf(">> L%d r:%e sy: %e sz:
         // %e\n",j,layer->radius,fDetPointRes[j][i],fDetPointZRes[j][i]);
         //  End save
@@ -1528,9 +1577,10 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
         //
 
         if (!probTr.Update(meas, measErr2)) {
-          printf("Failed to update the track by measurement {%.3f,%3f} err "
-                 "{%.3e %.3e %.3e}\n",
-                 meas[0], meas[1], measErr2[0], measErr2[1], measErr2[2]);
+          printf(
+            "Failed to update the track by measurement {%.3f,%3f} err "
+            "{%.3e %.3e %.3e}\n",
+            meas[0], meas[1], measErr2[0], measErr2[1], measErr2[2]);
           probTr.Print();
           exit(1);
         }
@@ -1562,9 +1612,9 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
                     TMath::Abs(probTr.GetSigned1Pt());
       fMomentumRes[i] = 100. * TMath::Abs(deltaPoverP); // results in percent
       fResolutionRPhi[i] =
-          TMath::Sqrt(probTr.GetSigmaY2()) * 1.e4; // result in microns
+        TMath::Sqrt(probTr.GetSigmaY2()) * 1.e4; // result in microns
       fResolutionZ[i] =
-          TMath::Sqrt(probTr.GetSigmaZ2()) * 1.e4; // result in microns
+        TMath::Sqrt(probTr.GetSigmaZ2()) * 1.e4; // result in microns
       //      equivalent[i]  =  TMath::Sqrt(fResolutionRPhi[i]*fResolutionZ[i])
       //      ;  // Equivalent circular radius
       //
@@ -1576,8 +1626,9 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
           printf("Number of combinatorics for probabilities: %d\n", komb);
         printf("Mass of tracked particle: %f (at pt=%5.0lf MeV)\n",
                fParticleMass, fTransMomenta[i] * 1000);
-        printf("Name   Radius Thickness PointResOn PointResOnZ  DetRes  "
-               "DetResZ  Density Efficiency\n");
+        printf(
+          "Name   Radius Thickness PointResOn PointResOnZ  DetRes  "
+          "DetResZ  Density Efficiency\n");
         //	printOnce =0;
       }
 
@@ -1586,7 +1637,7 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
       //      for (Int_t j=(fLayers.GetEntries()-1); j>=0; j--) {  // Layer loop
       for (Int_t j = lastActiveLayer + 1; j--;) { // Layer loop
 
-        layer = (CylLayerK *)fLayers.At(j);
+        layer = (CylLayerK*)fLayers.At(j);
 
         // Convert to Meters, Tesla, and GeV
         Float_t radius = layer->radius / 100;
@@ -1597,19 +1648,17 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
         Bool_t isDead = layer->isDead;
         Bool_t isTempDead = layer->isTempDead;
 
-        
-
-       // if ((!isDead && !isTempDead && radLength > 0)) {
+        // if ((!isDead && !isTempDead && radLength > 0)) {
         if ((!isDead && !isTempDead && radLength > 0)) {
 
           Double_t rphiError =
-              TMath::Sqrt(fDetPointRes[j][i] * fDetPointRes[j][i] +
-                          phiRes * phiRes) *
-              100.; // work in cm
+            TMath::Sqrt(fDetPointRes[j][i] * fDetPointRes[j][i] +
+                        phiRes * phiRes) *
+            100.; // work in cm
           Double_t zError =
-              TMath::Sqrt(fDetPointZRes[j][i] * fDetPointZRes[j][i] +
-                          zRes * zRes) *
-              100.; // work in cm
+            TMath::Sqrt(fDetPointZRes[j][i] * fDetPointZRes[j][i] +
+                        zRes * zRes) *
+            100.; // work in cm
 
           Double_t layerEfficiency = 0;
           if (EfficiencySearchFlag == 0)
@@ -1618,15 +1667,15 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
             layerEfficiency = ProbGoodChiSqHit(radius * 100, rphiError, zError);
           else if (EfficiencySearchFlag == 2)
             layerEfficiency =
-                ProbGoodChiSqPlusConfHit(radius * 100, leff, rphiError, zError);
+              ProbGoodChiSqPlusConfHit(radius * 100, leff, rphiError, zError);
 
           TString name(layer->GetName());
           if (IsITSLayer(name)) {
             probLay(2, iLayActive) = layerEfficiency; // Pcorr
             probLay(0, iLayActive) = ProbNullChiSqPlusConfHit(
-                radius * 100, leff, rphiError, zError); // Pnull
+              radius * 100, leff, rphiError, zError); // Pnull
             probLay(1, iLayActive) =
-                1 - probLay(2, iLayActive) - probLay(0, iLayActive); // Pfake
+              1 - probLay(2, iLayActive) - probLay(0, iLayActive); // Pfake
             iLayActive++;
           }
           if (!IsITSLayer(name) && (!name.Contains("tpc_0")))
@@ -1648,33 +1697,32 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
             fEfficiency[massloop][i] *= layerEfficiency;
         }
 
-         /*else if (IsITSLayer(layer->GetName()) && isTempDead) {
-         // Treat dead layer as null hit
-          probLay(0, iLayActive) = 1.0; // 100% null
-          probLay(1, iLayActive) = 0.0;
-          probLay(2, iLayActive) = 0.0;
-          iLayActive++;
-        }*/
-        //NEW to take into account the walls
-      else if ((IsITSLayer(layer->GetName()) || TString(layer->GetName()).Contains("wall")) && isTempDead) {
-       if (IsITSLayer(layer->GetName())) {
-        // Only ITS layers contribute to probLay
-        probLay(0, iLayActive) = 1.0; // null
-        probLay(1, iLayActive) = 0.0; // fake
-        probLay(2, iLayActive) = 0.0; // corr
-        iLayActive++;
-         } else {
-        // Wall layer → do nothing in probLay, just skip
-        if (DetectorK::verboseG)
-            printf("Skipping phi-gap wall layer: %s\n", layer->GetName());
-     }
-  }
-
+        /*else if (IsITSLayer(layer->GetName()) && isTempDead) {
+        // Treat dead layer as null hit
+         probLay(0, iLayActive) = 1.0; // 100% null
+         probLay(1, iLayActive) = 0.0;
+         probLay(2, iLayActive) = 0.0;
+         iLayActive++;
+       }*/
+        // NEW to take into account the walls
+        else if ((IsITSLayer(layer->GetName()) || TString(layer->GetName()).Contains("wall")) && isTempDead) {
+          if (IsITSLayer(layer->GetName())) {
+            // Only ITS layers contribute to probLay
+            probLay(0, iLayActive) = 1.0; // null
+            probLay(1, iLayActive) = 0.0; // fake
+            probLay(2, iLayActive) = 0.0; // corr
+            iLayActive++;
+          } else {
+            // Wall layer → do nothing in probLay, just skip
+            if (DetectorK::verboseG)
+              printf("Skipping phi-gap wall layer: %s\n", layer->GetName());
+          }
+        }
 
         if (fAtLeastCorr != -1 || fAtLeastHits) {
-        //if (fAtLeastCorr != -1 || fAtLeastHits!= -1) {
-          // Calculate probabilities from Kombinatorics tree ...
-          Double_t *probs = PrepareEffFakeKombinations(&probKomb, &probLay);
+          // if (fAtLeastCorr != -1 || fAtLeastHits!= -1) {
+          //  Calculate probabilities from Kombinatorics tree ...
+          Double_t* probs = PrepareEffFakeKombinations(&probKomb, &probLay);
           fEfficiency[massloop][i] = probs[0]; // efficiency
           fFake[massloop][i] = probs[1];       // fake
           printf("i %d, pt %f  eff %f probs[0] %f probs[1] %f\n", i, pt,
@@ -1715,13 +1763,14 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
         // infinite, this does not change anything.
 
         Bool_t doLikeAliRoot =
-            0; // don't do the "combined info" but do like in Aliroot
+          0; // don't do the "combined info" but do like in Aliroot
 
         if (print == 1 && fTransMomenta[i] >= meanPt && massloop == 2 &&
             printOnce == 1) {
-          printf("- Numbers of active layer is low (%d):\n    -> \"outward\" "
-                 "fitting done as well to get reliable eff.estimates\n",
-                 fNumberOfActiveLayers);
+          printf(
+            "- Numbers of active layer is low (%d):\n    -> \"outward\" "
+            "fitting done as well to get reliable eff.estimates\n",
+            fNumberOfActiveLayers);
         }
 
         // RESET Covariance Matrix ( to 10 x the estimate -> as it is done in
@@ -1742,9 +1791,9 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
         }
         // Clean up and storing of "forward estimates"
         Double_t detPointResForw[kMaxNumberOfDetectors][kNptBins],
-            detPointZResForw[kMaxNumberOfDetectors][kNptBins];
+          detPointZResForw[kMaxNumberOfDetectors][kNptBins];
         Double_t detPointResBwd[kMaxNumberOfDetectors][kNptBins],
-            detPointZResBwd[kMaxNumberOfDetectors][kNptBins];
+          detPointZResBwd[kMaxNumberOfDetectors][kNptBins];
         for (Int_t k = 0; k < kMaxNumberOfDetectors; k++) {
           for (Int_t l = 0; l < nPt; l++) {
             detPointResForw[k][l] = fDetPointRes[k][l];
@@ -1760,8 +1809,8 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
         // find first "active layer" - start tracking at the first active layer
         Int_t firstActiveLayer = 0;
         for (Int_t j = 0; j <= lastActiveLayer; j++) {
-          layer = (CylLayerK *)fLayers.At(j);
-          //layer->isTempDead = kFALSE;
+          layer = (CylLayerK*)fLayers.At(j);
+          // layer->isTempDead = kFALSE;
           if (!(layer->isDead) && !(layer->isTempDead)) { // is alive
             firstActiveLayer = j;
             printf("firstActiveLayer %d\n", j);
@@ -1771,15 +1820,15 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
         // probTr.Rotate(0);
         for (Int_t j = firstActiveLayer; j <= lastActiveLayer; j++) { // Layer loop
 
-            // Cache original values for this track
-            // double phiRes_orig     = layer->phiRes;
-            // double zRes_orig       = layer->zRes;
-            // double radLength_orig  = layer->radL;
-         //printf("2. Layer %d, phiRes_orig %f, zRes_orig %f,radLength_orig %f\n ",j, phiRes_orig, zRes_orig, radLength_orig );
+          // Cache original values for this track
+          // double phiRes_orig     = layer->phiRes;
+          // double zRes_orig       = layer->zRes;
+          // double radLength_orig  = layer->radL;
+          // printf("2. Layer %d, phiRes_orig %f, zRes_orig %f,radLength_orig %f\n ",j, phiRes_orig, zRes_orig, radLength_orig );
 
-          layer = (CylLayerK *)fLayers.At(j);
+          layer = (CylLayerK*)fLayers.At(j);
           //  CylLayerK *nextlayer = (CylLayerK*)fLayers.At(j+1);
-         // if (layer) layer->isTempDead = kFALSE;
+          // if (layer) layer->isTempDead = kFALSE;
 
           TString name(layer->GetName());
           Bool_t isVertex = name.Contains("vertex");
@@ -1794,40 +1843,40 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
             if (TMath::Abs(TMath::Abs(phi) - TMath::Pi() / 2) < 1e-3)
               phi = 0; // TMath::Sign(TMath::Pi()/2 - 1e-3,phi);
 
-           TString lname = layer->GetName();
-          //if (!lname.Contains("wall")){
+            TString lname = layer->GetName();
+            // if (!lname.Contains("wall")){
             if (layer->IsInGap(phi, phiShift)) {
               printf("layer gap, backward propagation\n");
               // continue; // skip gap layers
               KillLayerTemporarily((char*)layer->GetName());
 
-              //printf("GAP HIT → Layer %s: phi = %.3f + shift = %.3f | orig phiRes=%.6f, zRes=%.6f, radL=%.6f\n", layer->GetName(), phi, phiShift, phiRes_orig, zRes_orig, radLength_orig);
+              // printf("GAP HIT → Layer %s: phi = %.3f + shift = %.3f | orig phiRes=%.6f, zRes=%.6f, radL=%.6f\n", layer->GetName(), phi, phiShift, phiRes_orig, zRes_orig, radLength_orig);
 
-                  layer->phiRes = 999999;
-                  layer->zRes   = 999999;
-                  layer->radL   = 0;
+              layer->phiRes = 999999;
+              layer->zRes = 999999;
+              layer->radL = 0;
             }
-          //}
-            //else {
-        // Ensure original values are used if not masked
+            //}
+            // else {
+            // Ensure original values are used if not masked
             //    layer->phiRes    = phiRes_orig;
             //    layer->zRes      = zRes_orig;
             //    layer->radL = radLength_orig;
             //    }
 
+            // if (layer->isTempDead) {
 
-             //if (layer->isTempDead) {
-            
-             //}
+            //}
             // if (layer->IsInGap(phi)) {
             // if (DetectorK::verboseG)
             //	printf("Track at phi=%.2f lies in a phi gap of layer %s,
-            //skipping.\n", phi, layer->GetName()); 	continue; // Skip this layer
+            // skipping.\n", phi, layer->GetName()); 	continue; // Skip this layer
             //	}
             if (!probTr.Rotate(phi)) {
-              printf("Failed to rotate to the frame (phi:%+.3f)of layer at "
-                     "%.2f at XYZ: %+.3f %+.3f %+.3f (pt=%+.3f)\n",
-                     phi, layer->radius, pos[0], pos[1], pos[2], pt);
+              printf(
+                "Failed to rotate to the frame (phi:%+.3f)of layer at "
+                "%.2f at XYZ: %+.3f %+.3f %+.3f (pt=%+.3f)\n",
+                phi, layer->radius, pos[0], pos[1], pos[2], pt);
               probTr.Print();
               exit(1);
             }
@@ -1842,9 +1891,9 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
           */
           //
           detPointResBwd[j][i] =
-              TMath::Sqrt(probTr.GetSigmaY2()) / 100; // result in meters
+            TMath::Sqrt(probTr.GetSigmaY2()) / 100; // result in meters
           detPointZResBwd[j][i] =
-              TMath::Sqrt(probTr.GetSigmaZ2()) / 100; // result in meters
+            TMath::Sqrt(probTr.GetSigmaZ2()) / 100; // result in meters
           //
           // printf("<< L%d r:%e sy: %e sz:
           // %e\n",j,layer->radius,fDetPointRes[j][i],fDetPointZRes[j][i]);
@@ -1857,9 +1906,10 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
                                 layer->zRes * layer->zRes};
           //
           if (!probTr.Update(meas, measErr2)) {
-            printf("Failed to update the track by measurement {%.3f,%3f} err "
-                   "{%.3e %.3e %.3e}\n",
-                   meas[0], meas[1], measErr2[0], measErr2[1], measErr2[2]);
+            printf(
+              "Failed to update the track by measurement {%.3f,%3f} err "
+              "{%.3e %.3e %.3e}\n",
+              meas[0], meas[1], measErr2[0], measErr2[1], measErr2[2]);
             probTr.Print();
             exit(1);
           }
@@ -1900,9 +1950,9 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
         */
 
         //	deltaPoverP          =
-        //TMath::Sqrt(probTr.GetSigma1Pt2())/TMath::Abs(probTr.GetSigned1Pt());
+        // TMath::Sqrt(probTr.GetSigma1Pt2())/TMath::Abs(probTr.GetSigned1Pt());
         //	fMomentumRes[i]      =  100.* TMath::Abs( deltaPoverP ); //
-        //results in percent
+        // results in percent
 
         // Weighted combination of the forward and backward estimates
         if (!doLikeAliRoot) {
@@ -1914,15 +1964,15 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
           for (Int_t j = lastActiveLayer + 1; j--;) {
             //
             fDetPointRes[j][i] =
-                detPointResForw[j][i] * detPointResBwd[j][i] /
-                TMath::Sqrt((detPointResForw[j][i] * detPointResForw[j][i]) +
-                            (detPointResBwd[j][i] * detPointResBwd[j][i]));
+              detPointResForw[j][i] * detPointResBwd[j][i] /
+              TMath::Sqrt((detPointResForw[j][i] * detPointResForw[j][i]) +
+                          (detPointResBwd[j][i] * detPointResBwd[j][i]));
             fDetPointZRes[j][i] =
-                detPointZResForw[j][i] * detPointZResBwd[j][i] /
-                TMath::Sqrt((detPointZResForw[j][i] * detPointZResForw[j][i]) +
-                            (detPointZResBwd[j][i] * detPointZResBwd[j][i]));
+              detPointZResForw[j][i] * detPointZResBwd[j][i] /
+              TMath::Sqrt((detPointZResForw[j][i] * detPointZResForw[j][i]) +
+                          (detPointZResBwd[j][i] * detPointZResBwd[j][i]));
             //
-            layer = (CylLayerK *)fLayers.At(j);
+            layer = (CylLayerK*)fLayers.At(j);
 
             TString name(layer->GetName());
             if (layer->isDead || layer->isTempDead || (!IsITSLayer(name) && (!name.Contains("tpc_0"))))
@@ -1937,20 +1987,20 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
               Float_t radLength = layer->radL;
               Float_t leff = layer->eff; // basic layer efficiency
               Double_t rphiError =
-                  TMath::Sqrt(detPointResBwd[j][i] * detPointResBwd[j][i] +
-                              phiRes * phiRes) *
-                  100.; // work in cm
+                TMath::Sqrt(detPointResBwd[j][i] * detPointResBwd[j][i] +
+                            phiRes * phiRes) *
+                100.; // work in cm
               Double_t zError =
-                  TMath::Sqrt(detPointZResBwd[j][i] * detPointZResBwd[j][i] +
-                              zRes * zRes) *
-                  100.; // work in cm
+                TMath::Sqrt(detPointZResBwd[j][i] * detPointZResBwd[j][i] +
+                            zRes * zRes) *
+                100.; // work in cm
               //
               Double_t layerEfficiency = 0;
               if (EfficiencySearchFlag == 0)
                 layerEfficiency = ProbGoodHit(radius * 100, rphiError, zError);
               else if (EfficiencySearchFlag == 1)
                 layerEfficiency =
-                    ProbGoodChiSqHit(radius * 100, rphiError, zError);
+                  ProbGoodChiSqHit(radius * 100, rphiError, zError);
               else if (EfficiencySearchFlag == 2)
                 layerEfficiency = ProbGoodChiSqPlusConfHit(radius * 100, leff,
                                                            rphiError, zError);
@@ -1978,7 +2028,7 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
 
         for (Int_t j = lastActiveLayer + 1; j--;) { // Layer loop
 
-          layer = (CylLayerK *)fLayers.At(j);
+          layer = (CylLayerK*)fLayers.At(j);
 
           // Convert to Meters, Tesla, and GeV
           Float_t radius = layer->radius / 100;
@@ -1989,34 +2039,34 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
           Bool_t isDead = layer->isDead;
           Bool_t isTempDead = layer->isTempDead;
 
-          //printf("layer %d, layer efficiency %f\n", j, leff);
+          // printf("layer %d, layer efficiency %f\n", j, leff);
 
           Double_t layerEfficiency = 0;
           if ((!isDead && !isTempDead && radLength > 0)) {
             Double_t rphiError =
-                TMath::Sqrt(fDetPointRes[j][i] * fDetPointRes[j][i] +
-                            phiRes * phiRes) *
-                100.; // work in cm
+              TMath::Sqrt(fDetPointRes[j][i] * fDetPointRes[j][i] +
+                          phiRes * phiRes) *
+              100.; // work in cm
             Double_t zError =
-                TMath::Sqrt(fDetPointZRes[j][i] * fDetPointZRes[j][i] +
-                            zRes * zRes) *
-                100.; // work in cm
+              TMath::Sqrt(fDetPointZRes[j][i] * fDetPointZRes[j][i] +
+                          zRes * zRes) *
+              100.; // work in cm
             if (EfficiencySearchFlag == 0)
               layerEfficiency = ProbGoodHit(radius * 100, rphiError, zError);
             else if (EfficiencySearchFlag == 1)
               layerEfficiency =
-                  ProbGoodChiSqHit(radius * 100, rphiError, zError);
+                ProbGoodChiSqHit(radius * 100, rphiError, zError);
             else if (EfficiencySearchFlag == 2)
               layerEfficiency = ProbGoodChiSqPlusConfHit(radius * 100, leff,
                                                          rphiError, zError);
-            printf ("layer %d, layerEfficiency %f\n", j, layerEfficiency);
+            printf("layer %d, layerEfficiency %f\n", j, layerEfficiency);
             TString name(layer->GetName());
             if (IsITSLayer(name)) {
               probLay(2, iLayActive) = layerEfficiency; // Pcorr
               probLay(0, iLayActive) = ProbNullChiSqPlusConfHit(
-                  radius * 100, leff, rphiError, zError); // Pnull
+                radius * 100, leff, rphiError, zError); // Pnull
               probLay(1, iLayActive) =
-                  1 - probLay(2, iLayActive) - probLay(0, iLayActive); // Pfake
+                1 - probLay(2, iLayActive) - probLay(0, iLayActive); // Pfake
               iLayActive++;
             }
             if (!IsITSLayer(name) && (!name.Contains("tpc_0")))
@@ -2044,11 +2094,11 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
           }
           if (fAtLeastCorr != -1 || fAtLeastHits != -1) {
             // Calculate probabilities from Kombinatorics tree ...
-            Double_t *probs = PrepareEffFakeKombinations(&probKomb, &probLay);
+            Double_t* probs = PrepareEffFakeKombinations(&probKomb, &probLay);
             fEfficiency[massloop][i] = probs[0]; // efficiency
             fFake[massloop][i] = probs[1];       // fake
             printf("2--> i %d, pt %f  eff %f probs[0] %f probs[1] %f\n", i, pt,
-                 fEfficiency[massloop][i], probs[0], probs[1]);
+                   fEfficiency[massloop][i], probs[0], probs[1]);
           }
         }
         if (print == 1 && fTransMomenta[i] >= meanPt && massloop == 2 &&
@@ -2058,8 +2108,9 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
         }
       }
 
-      if(counterLayersWithTrackInGap > (3 - fAtLeastInnerHits)) fEfficiency[massloop][i]  = 0; //INSERIRE QUA CONDIZIONI SU MIN HITS RAGGIUNTI
-      if (massloop == 2) { // copy layer specific performances
+      if (counterLayersWithTrackInGap > (3 - fAtLeastInnerHits))
+        fEfficiency[massloop][i] = 0; // INSERIRE QUA CONDIZIONI SU MIN HITS RAGGIUNTI
+      if (massloop == 2) {            // copy layer specific performances
         fResolutionRPhiLay[i] = fDetPointRes[kDetLayer][i];
         fResolutionZLay[i] = fDetPointZRes[kDetLayer][i];
       }
@@ -2078,8 +2129,8 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
 
     if (fUsePhiRandomisation && hPhiRejected && hPhiAccepted) {
 
-      TCanvas *cDebugPhi =
-          new TCanvas("cDebugPhi", "#phi Acceptance Debug", 800, 600);
+      TCanvas* cDebugPhi =
+        new TCanvas("cDebugPhi", "#phi Acceptance Debug", 800, 600);
       cDebugPhi->Divide(1, 3);
       cDebugPhi->cd(1);
       hPhiAccepted->SetLineColor(kGreen);
@@ -2100,9 +2151,7 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
       cDebugPhi->SaveAs("phi_acceptance_debug.png");
       cDebugPhi->SaveAs("phi_acceptance_debug.root");
 
-
-
-      TFile *outf = new TFile("phi_debug_gaps.root", "RECREATE");
+      TFile* outf = new TFile("phi_debug_gaps.root", "RECREATE");
       hPhiAccepted->Write();
       hPhiRejected->Write();
       hPhiRejected_layer0->Write();
@@ -2155,10 +2204,11 @@ void DetectorK::SolveViaBilloir(Int_t flagD0, Int_t print, Bool_t allPt,
   } // mass loop
 
   probTr.SetUseLogTermMS(
-      kFALSE); // Reset of MS term usage to avoid problems since its static
+    kFALSE); // Reset of MS term usage to avoid problems since its static
 }
 
-Bool_t DetectorK::SolveTrack(TrackSol &ts) {
+Bool_t DetectorK::SolveTrack(TrackSol& ts)
+{
   //
   // Solves the current geometry for single track of given kinematics
   //
@@ -2166,6 +2216,11 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
   double etaTr = ts.fEta;
   double mass = ts.fMass;
   double charge = ts.fCharge;
+
+  // reset good hit probability
+  for (int i = 0; i < kMaxNumberOfDetectors; ++i)
+    fGoodHitProb[i] = -1.;
+  fGoodHitProb[0] = 1.; // we use layer zero to accumulate
 
   if (ptTr < 0) {
     printf("Input track is not initialized");
@@ -2177,23 +2232,23 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
   static AliExternalTrackParam probTr; // track to propagate
   probTr.SetUseLogTermMS(kTRUE);
   //
-  TClonesArray &saveParInward = ts.fTrackInw;
-  TClonesArray &saveParOutwardB = ts.fTrackOutB;
-  TClonesArray &saveParOutwardA = ts.fTrackOutA;
-  TClonesArray &saveParComb = ts.fTrackCmb;
+  TClonesArray& saveParInward = ts.fTrackInw;
+  TClonesArray& saveParOutwardB = ts.fTrackOutB;
+  TClonesArray& saveParOutwardA = ts.fTrackOutA;
+  TClonesArray& saveParComb = ts.fTrackCmb;
 
   // Calculate track parameters using Billoirs method of matrices
   Double_t pt, lambda;
   //
-  CylLayerK *last = (CylLayerK *)fLayers.At((fLayers.GetEntries() - 1));
+  CylLayerK* last = (CylLayerK*)fLayers.At((fLayers.GetEntries() - 1));
   double maxR = last->radius + kTrackingMargin * 2;
   double minRad =
-      (fMinRadTrack > 0 && fMinRadTrack < maxR) ? fMinRadTrack : maxR;
+    (fMinRadTrack > 0 && fMinRadTrack < maxR) ? fMinRadTrack : maxR;
   //
   if (last->radius > minRad) {
     last = 0;
     for (Int_t i = 0; i < fLayers.GetEntries(); i++) {
-      CylLayerK *l = (CylLayerK *)fLayers.At(i);
+      CylLayerK* l = (CylLayerK*)fLayers.At(i);
       if (/*!(l->isDead) && */ (l->radius < minRad))
         last = l;
     }
@@ -2209,7 +2264,11 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
   // is on the Z axis These are the EndPoint values for y, z, a, b, and d
   double bGauss = fBField * 10; // field in kgauss
   pt = ptTr;
-  enum { kY, kZ, kSnp, kTgl, kPtI }; // track parameter aliases
+  enum { kY,
+         kZ,
+         kSnp,
+         kTgl,
+         kPtI }; // track parameter aliases
   enum {
     kY2,
     kYZ,
@@ -2229,11 +2288,11 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
   }; // cov.matrix aliases
   //
   probTr.Reset();
-  double *trPars = (double *)probTr.GetParameter();
-  double *trCov = (double *)probTr.GetCovariance();
-  trPars[kY] = 0;   // start from Y = 0
-  trPars[kZ] = 0;   //            Z = 0
-  trPars[kSnp] = 0; //            track along X axis at the vertex
+  double* trPars = (double*)probTr.GetParameter();
+  double* trCov = (double*)probTr.GetCovariance();
+  trPars[kY] = 0;                    // start from Y = 0
+  trPars[kZ] = 0;                    //            Z = 0
+  trPars[kSnp] = 0;                  //            track along X axis at the vertex
   trPars[kTgl] = TMath::Tan(lambda); //            dip
   trPars[kPtI] = charge / pt;        //            q/pt
   //
@@ -2242,17 +2301,17 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
   //
   // find max layer this track /can reach
   double rmx = (TMath::Abs(fBField) > 1e-5)
-                   ? pt * 100. / (0.3 * TMath::Abs(fBField))
-                   : 9999;
+                 ? pt * 100. / (0.3 * TMath::Abs(fBField))
+                 : 9999;
   if (2 * rmx - 5. < minRad && minRad > 0) {
     printf("Track of pt=%.3f cannot be tracked to min. r=%f\n", pt, minRad);
     return kFALSE;
   }
   Int_t lastActiveLayer = -1;
   for (Int_t j = fLayers.GetEntries(); j--;) {
-    CylLayerK *l = (CylLayerK *)fLayers.At(j);
+    CylLayerK* l = (CylLayerK*)fLayers.At(j);
     //	printf("at lr %d r: %f vs %f, pt:%f\n",j,l->radius,
-    //2*rmx-2.*kTrackingMargin, pt);
+    // 2*rmx-2.*kTrackingMargin, pt);
     if (/*!(l->isDead) && */ (l->radius <= 2 * (rmx - 5))) {
       lastActiveLayer = j;
       last = l;
@@ -2294,11 +2353,11 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
   probTr.CheckCovariance();
   //
   // Back-propagate the covariance matrix along the track.
-  CylLayerK *layer = 0;
+  CylLayerK* layer = 0;
   //
   for (Int_t j = lastActiveLayer + 1; j--;) { // Layer loop
 
-    layer = (CylLayerK *)fLayers.At(j);
+    layer = (CylLayerK*)fLayers.At(j);
 
     if (layer->radius > fMaxSeedRadius)
       continue; // no seeding beyond this radius
@@ -2322,9 +2381,10 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
       // phi, layer->GetName()); continue; // Skip this phi segment
       // }
       if (!probTr.Rotate(phi)) {
-        printf("Failed to rotate to the frame (phi:%+.3f)of layer at %.2f at "
-               "XYZ: %+.3f %+.3f %+.3f (pt=%+.3f)\n",
-               phi, layer->radius, pos[0], pos[1], pos[2], pt);
+        printf(
+          "Failed to rotate to the frame (phi:%+.3f)of layer at %.2f at "
+          "XYZ: %+.3f %+.3f %+.3f (pt=%+.3f)\n",
+          phi, layer->radius, pos[0], pos[1], pos[2], pt);
 
         probTr.Print();
         exit(1);
@@ -2346,9 +2406,10 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
                             layer->zRes * layer->zRes};
       //
       if (!probTr.Update(meas, measErr2)) {
-        printf("Failed to update the track by measurement {%.3f,%3f} err {%.3e "
-               "%.3e %.3e}\n",
-               meas[0], meas[1], measErr2[0], measErr2[1], measErr2[2]);
+        printf(
+          "Failed to update the track by measurement {%.3f,%3f} err {%.3e "
+          "%.3e %.3e}\n",
+          meas[0], meas[1], measErr2[0], measErr2[1], measErr2[2]);
         probTr.Print();
         exit(1);
       }
@@ -2377,7 +2438,7 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
   // one error matrices is infinite, this does not change anything.
 
   Bool_t doLikeAliRoot =
-      0; // don't do the "combined info" but do like in Aliroot
+    0; // don't do the "combined info" but do like in Aliroot
 
   // RESET Covariance Matrix ( to 10 x the estimate -> as it is done in
   // AliExternalTrackParam)
@@ -2396,7 +2457,7 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
   // find first "active layer" - start tracking at the first active layer
   Int_t firstActiveLayer = 0;
   for (Int_t j = 0; j <= lastActiveLayer; j++) {
-    layer = (CylLayerK *)fLayers.At(j);
+    layer = (CylLayerK*)fLayers.At(j);
     if (!(layer->isDead) && !(layer->isTempDead)) { // is alive
       firstActiveLayer = j;
       break;
@@ -2405,7 +2466,7 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
   // probTr.Rotate(0);
   for (Int_t j = 0; j <= lastActiveLayer; j++) { // Layer loop
     //
-    layer = (CylLayerK *)fLayers.At(j);
+    layer = (CylLayerK*)fLayers.At(j);
     TString name(layer->GetName());
     Bool_t isVertex = name.Contains("vertex");
     if (!PropagateToR(&probTr, layer->radius, bGauss, 1))
@@ -2419,9 +2480,10 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
       if (TMath::Abs(TMath::Abs(phi) - TMath::Pi() / 2) < 1e-3)
         phi = 0; // TMath::Sign(TMath::Pi()/2 - 1e-3,phi);
       if (!probTr.Rotate(phi)) {
-        printf("Failed to rotate to the frame (phi:%+.3f)of layer at %.2f at "
-               "XYZ: %+.3f %+.3f %+.3f (pt=%+.3f)\n",
-               phi, layer->radius, pos[0], pos[1], pos[2], pt);
+        printf(
+          "Failed to rotate to the frame (phi:%+.3f)of layer at %.2f at "
+          "XYZ: %+.3f %+.3f %+.3f (pt=%+.3f)\n",
+          phi, layer->radius, pos[0], pos[1], pos[2], pt);
         probTr.Print();
         exit(1);
       }
@@ -2432,12 +2494,12 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
     //
     // combined in-out prediction
     new (saveParComb[j])
-        AliExternalTrackParam(*(AliExternalTrackParam *)saveParInward[j]);
-    double *covInw =
-        (double *)((AliExternalTrackParam *)saveParInward[j])->GetCovariance();
-    double *covOut = (double *)probTr.GetCovariance();
-    double *covCmb =
-        (double *)((AliExternalTrackParam *)saveParComb[j])->GetCovariance();
+      AliExternalTrackParam(*(AliExternalTrackParam*)saveParInward[j]);
+    double* covInw =
+      (double*)((AliExternalTrackParam*)saveParInward[j])->GetCovariance();
+    double* covOut = (double*)probTr.GetCovariance();
+    double* covCmb =
+      (double*)((AliExternalTrackParam*)saveParComb[j])->GetCovariance();
     covCmb[0] = covInw[0] * covOut[0] / (covInw[0] + covOut[0]);
     covCmb[2] = covInw[2] * covOut[2] / (covInw[2] + covOut[2]);
     covCmb[1] = 0;
@@ -2449,9 +2511,10 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
                             layer->zRes * layer->zRes};
       //
       if (!probTr.Update(meas, measErr2)) {
-        printf("Failed to update the track by measurement {%.3f,%3f} err {%.3e "
-               "%.3e %.3e}\n",
-               meas[0], meas[1], measErr2[0], measErr2[1], measErr2[2]);
+        printf(
+          "Failed to update the track by measurement {%.3f,%3f} err {%.3e "
+          "%.3e %.3e}\n",
+          meas[0], meas[1], measErr2[0], measErr2[1], measErr2[2]);
         probTr.Print();
         exit(1);
       }
@@ -2467,15 +2530,23 @@ Bool_t DetectorK::SolveTrack(TrackSol &ts) {
     // save outward parameters at this layer: after the update
     new (saveParOutwardA[j]) AliExternalTrackParam(probTr);
     //
+
+    if (!isVertex && !layer->isDead) {
+      AliExternalTrackParam* trCmb = (AliExternalTrackParam*)ts.fTrackCmb[j];
+      double sigYCmb = TMath::Sqrt(trCmb->GetSigmaY2() + layer->phiRes * layer->phiRes);
+      double sigZCmb = TMath::Sqrt(trCmb->GetSigmaZ2() + layer->zRes * layer->zRes);
+      fGoodHitProb[j] = ProbGoodChiSqHit(layer->radius * 100., sigYCmb * 100., sigZCmb * 100.);
+    }
   }
   //
   probTr.SetUseLogTermMS(
-      kFALSE); // Reset of MS term usage to avoid problems since its static
+    kFALSE); // Reset of MS term usage to avoid problems since its static
   //
   return kTRUE;
 }
 
-Bool_t DetectorK::CalcITSEff(TrackSol &ts, Bool_t verbose) {
+Bool_t DetectorK::CalcITSEff(TrackSol& ts, Bool_t verbose)
+{
   // Prepare Probability Kombinations
   Int_t nLayer = fNumberOfActiveITSLayers;
   Int_t base = 3; // null, fake, correct
@@ -2488,86 +2559,90 @@ Bool_t DetectorK::CalcITSEff(TrackSol &ts, Bool_t verbose) {
     for (Int_t l = nLayer; l--;) {
       Int_t pow = ((Int_t)TMath::Power(base, l + 1));
       probKomb(num, nLayer - 1 - l) =
-          (num % pow) / ((Int_t)TMath::Power(base, l));
+        (num % pow) / ((Int_t)TMath::Power(base, l));
     }
   }
   int nITSAct = 0, ilr = 0;
   if (verbose)
-    printf("Lr:  \t rad   x/x0   h.dens | Inw sY sZ  ->  Pr.Corr | Out sY sZ  "
-           "->  Pr.Corr | Cmb sY sZ  ->  Pr.Corr |\n");
+    printf(
+      "Lr:  \t rad   x/x0   h.dens | Inw sY sZ  ->  Pr.Corr | Out sY sZ  "
+      "->  Pr.Corr | Cmb sY sZ  ->  Pr.Corr |\n");
 
   while (nITSAct < nLayer) {
-    CylLayerK *l = (CylLayerK *)fLayers.At(ilr);
+    CylLayerK* l = (CylLayerK*)fLayers.At(ilr);
     TString name(l->GetName());
     if (l->isDead || !IsITSLayer(name)) {
       ilr++;
       continue;
     }
     //
-    AliExternalTrackParam *trInw = (AliExternalTrackParam *)ts.fTrackInw[ilr];
-    AliExternalTrackParam *trOut = (AliExternalTrackParam *)ts.fTrackOutB[ilr];
-    AliExternalTrackParam *trCmb = (AliExternalTrackParam *)ts.fTrackCmb[ilr];
+    AliExternalTrackParam* trInw = (AliExternalTrackParam*)ts.fTrackInw[ilr];
+    AliExternalTrackParam* trOut = (AliExternalTrackParam*)ts.fTrackOutB[ilr];
+    AliExternalTrackParam* trCmb = (AliExternalTrackParam*)ts.fTrackCmb[ilr];
     //
     double sigYInw = TMath::Sqrt(trInw->GetSigmaY2() + l->phiRes * l->phiRes);
     double sigZInw = TMath::Sqrt(trInw->GetSigmaZ2() + l->zRes * l->zRes);
     probLayInw(2, nITSAct) = ProbGoodChiSqPlusConfHit(
-        l->radius, l->eff, sigYInw, sigZInw); // corr hit prob
+      l->radius, l->eff, sigYInw, sigZInw); // corr hit prob
     probLayInw(0, nITSAct) = ProbNullChiSqPlusConfHit(
-        l->radius, l->eff, sigYInw, sigZInw); // no hit prob
+      l->radius, l->eff, sigYInw, sigZInw); // no hit prob
     probLayInw(1, nITSAct) =
-        1. - probLayInw(2, nITSAct) - probLayInw(0, nITSAct);
+      1. - probLayInw(2, nITSAct) - probLayInw(0, nITSAct);
     //
     double sigYOut = TMath::Sqrt(trOut->GetSigmaY2() + l->phiRes * l->phiRes);
     double sigZOut = TMath::Sqrt(trOut->GetSigmaZ2() + l->zRes * l->zRes);
     probLayOut(2, nITSAct) = ProbGoodChiSqPlusConfHit(
-        l->radius, l->eff, sigYOut, sigZOut); // corr hit prob
+      l->radius, l->eff, sigYOut, sigZOut); // corr hit prob
     probLayOut(0, nITSAct) = ProbNullChiSqPlusConfHit(
-        l->radius, l->eff, sigYOut, sigZOut); // no hit prob
+      l->radius, l->eff, sigYOut, sigZOut); // no hit prob
     probLayOut(1, nITSAct) =
-        1. - probLayOut(2, nITSAct) - probLayOut(0, nITSAct);
+      1. - probLayOut(2, nITSAct) - probLayOut(0, nITSAct);
     //
     double sigYCmb = TMath::Sqrt(trCmb->GetSigmaY2() + l->phiRes * l->phiRes);
     double sigZCmb = TMath::Sqrt(trCmb->GetSigmaZ2() + l->zRes * l->zRes);
     probLayCmb(2, nITSAct) = ProbGoodChiSqPlusConfHit(
-        l->radius, l->eff, sigYCmb, sigZCmb); // corr hit prob
+      l->radius, l->eff, sigYCmb, sigZCmb); // corr hit prob
     probLayCmb(0, nITSAct) = ProbNullChiSqPlusConfHit(
-        l->radius, l->eff, sigYCmb, sigZCmb); // no hit prob
+      l->radius, l->eff, sigYCmb, sigZCmb); // no hit prob
     probLayCmb(1, nITSAct) =
-        1. - probLayCmb(2, nITSAct) - probLayCmb(0, nITSAct);
+      1. - probLayCmb(2, nITSAct) - probLayCmb(0, nITSAct);
     //
     if (verbose) {
       const double kCnv = 1e4;
-      printf("%s:\t%5.1f %.4f %7.0f | %6.0f %6.0f -> %.3f | %6.0f %6.0f -> "
-             "%.3f | %6.0f %6.0f -> %.3f\n",
-             l->GetName(), l->radius, l->radL, HitDensity(l->radius),
-             sigYInw * kCnv, sigZInw * kCnv, probLayInw(2, nITSAct),
-             sigYOut * kCnv, sigZOut * kCnv, probLayOut(2, nITSAct),
-             sigYCmb * kCnv, sigZCmb * kCnv, probLayCmb(2, nITSAct));
+      printf(
+        "%s:\t%5.1f %.4f %7.0f | %6.0f %6.0f -> %.3f | %6.0f %6.0f -> "
+        "%.3f | %6.0f %6.0f -> %.3f\n",
+        l->GetName(), l->radius, l->radL, HitDensity(l->radius),
+        sigYInw * kCnv, sigZInw * kCnv, probLayInw(2, nITSAct),
+        sigYOut * kCnv, sigZOut * kCnv, probLayOut(2, nITSAct),
+        sigYCmb * kCnv, sigZCmb * kCnv, probLayCmb(2, nITSAct));
     }
     nITSAct++;
     ilr++;
     //
   }
   PrepareEffFakeKombinations(&probKomb, &probLayInw,
-                             (double *)ts.fProb[TrackSol::kInw]);
+                             (double*)ts.fProb[TrackSol::kInw]);
   PrepareEffFakeKombinations(&probKomb, &probLayOut,
-                             (double *)ts.fProb[TrackSol::kOut]);
+                             (double*)ts.fProb[TrackSol::kOut]);
   PrepareEffFakeKombinations(&probKomb, &probLayCmb,
-                             (double *)ts.fProb[TrackSol::kCmb]);
+                             (double*)ts.fProb[TrackSol::kCmb]);
   if (verbose) {
-    printf("Corr/Fake probs:             |    %.4f/%.4f       |     %.4f/%.4f  "
-           "    |     %.4f/%.4f\n",
-           ts.fProb[TrackSol::kInw][0], ts.fProb[TrackSol::kInw][1],
-           ts.fProb[TrackSol::kOut][0], ts.fProb[TrackSol::kOut][1],
-           ts.fProb[TrackSol::kCmb][0], ts.fProb[TrackSol::kCmb][1]);
+    printf(
+      "Corr/Fake probs:             |    %.4f/%.4f       |     %.4f/%.4f  "
+      "    |     %.4f/%.4f\n",
+      ts.fProb[TrackSol::kInw][0], ts.fProb[TrackSol::kInw][1],
+      ts.fProb[TrackSol::kOut][0], ts.fProb[TrackSol::kOut][1],
+      ts.fProb[TrackSol::kCmb][0], ts.fProb[TrackSol::kCmb][1]);
   }
   //
   return kTRUE;
 }
 
 //_____________________________________________________________________
-Bool_t DetectorK::ExtrapolateToR(AliExternalTrackParam *probTr, double rTgt,
-                                 double mass) {
+Bool_t DetectorK::ExtrapolateToR(AliExternalTrackParam* probTr, double rTgt,
+                                 double mass)
+{
   // propagate the track to given radius R without updates (final extrapolation
   // in the tracking frame of cyl. at R)
   double xCurr = probTr->GetX();
@@ -2583,7 +2658,7 @@ Bool_t DetectorK::ExtrapolateToR(AliExternalTrackParam *probTr, double rTgt,
   //
   if (dir < 0) { // inward
     for (int ilr = fNumberOfLayers; ilr--;) {
-      CylLayerK *l = (CylLayerK *)fLayers.At(ilr);
+      CylLayerK* l = (CylLayerK*)fLayers.At(ilr);
       if (lrCurr < 0 && l->radius <= rCurr)
         lrCurr = ilr;
       if (l->radius >= rTgt)
@@ -2591,7 +2666,7 @@ Bool_t DetectorK::ExtrapolateToR(AliExternalTrackParam *probTr, double rTgt,
     }
   } else {
     for (int ilr = 0; ilr < fNumberOfLayers; ilr++) {
-      CylLayerK *l = (CylLayerK *)fLayers.At(ilr);
+      CylLayerK* l = (CylLayerK*)fLayers.At(ilr);
       if (lrCurr < 0 && l->radius >= rCurr)
         lrCurr = ilr;
       if (l->radius < rTgt)
@@ -2609,7 +2684,7 @@ Bool_t DetectorK::ExtrapolateToR(AliExternalTrackParam *probTr, double rTgt,
   double bGauss = fBField * 10;
   //
   for (int ilr = lrCurr; ilr != lrTgt; ilr += dir) {
-    CylLayerK *l = (CylLayerK *)fLayers.At(ilr);
+    CylLayerK* l = (CylLayerK*)fLayers.At(ilr);
     if (!PropagateToR(probTr, l->radius, bGauss, dir))
       return kFALSE;
     if (!probTr->CorrectForMeanMaterial(l->radL, 0, mass, kTRUE))
@@ -2631,12 +2706,13 @@ Bool_t DetectorK::ExtrapolateToR(AliExternalTrackParam *probTr, double rTgt,
   return kTRUE;
 }
 
-TGraph *DetectorK::GetGraphMomentumResolution(Int_t color, Int_t linewidth) {
+TGraph* DetectorK::GetGraphMomentumResolution(Int_t color, Int_t linewidth)
+{
   //
   // returns the momentum resolution
   //
 
-  TGraph *graph = new TGraph(kNptBins, fTransMomenta, fMomentumRes);
+  TGraph* graph = new TGraph(kNptBins, fTransMomenta, fMomentumRes);
   graph->SetTitle("Momentum Resolution .vs. Pt");
   //  graph->GetXaxis()->SetRangeUser(0.,5.0) ;
   graph->GetXaxis()->SetTitle("Transverse Momentum (GeV/c)");
@@ -2655,15 +2731,16 @@ TGraph *DetectorK::GetGraphMomentumResolution(Int_t color, Int_t linewidth) {
   return graph;
 }
 
-TGraph *DetectorK::GetGraphPointingResolution(Int_t axis, Int_t color,
-                                              Int_t linewidth) {
+TGraph* DetectorK::GetGraphPointingResolution(Int_t axis, Int_t color,
+                                              Int_t linewidth)
+{
 
   // Returns the pointing resolution
   // axis = 0 ... rphi pointing resolution
   // axis = 1 ... z pointing resolution
   //
 
-  TGraph *graph = 0;
+  TGraph* graph = 0;
 
   if (axis == 0) {
     graph = new TGraph(kNptBins, fTransMomenta, fResolutionRPhi);
@@ -2691,7 +2768,8 @@ TGraph *DetectorK::GetGraphPointingResolution(Int_t axis, Int_t color,
   return graph;
 }
 
-TGraph *DetectorK::GetGraphLayerInfo(Int_t plot, Int_t color, Int_t linewidth) {
+TGraph* DetectorK::GetGraphLayerInfo(Int_t plot, Int_t color, Int_t linewidth)
+{
 
   // Returns the pointing resolution
   // plot = 0 ... rphi pointing resolution
@@ -2709,20 +2787,20 @@ TGraph *DetectorK::GetGraphLayerInfo(Int_t plot, Int_t color, Int_t linewidth) {
       fDet[i] = fEfficProlongLay[i] * 100; // in percent
   }
 
-  CylLayerK *l = (CylLayerK *)fLayers.At(kDetLayer);
-  TGraph *graph = 0;
+  CylLayerK* l = (CylLayerK*)fLayers.At(kDetLayer);
+  TGraph* graph = 0;
   graph = new TGraph(kNptBins, fTransMomenta, fDet);
   if (plot == 0) {
     graph->SetTitle(Form("R-#phi Pointing Resolution onto layer \"%s\"",
-                         (char *)l->GetName()));
+                         (char*)l->GetName()));
     graph->GetYaxis()->SetTitle("R-#phi Pointing Resolution (#mum)");
   } else if (plot == 1) {
     graph->SetTitle(
-        Form("Z Pointing Resolution onto layer \"%s\"", (char *)l->GetName()));
+      Form("Z Pointing Resolution onto layer \"%s\"", (char*)l->GetName()));
     graph->GetYaxis()->SetTitle("Z Pointing Resolution (#mum)");
   } else {
     graph->SetTitle(Form("Prolongation efficiency onto layer \"%s\"",
-                         (char *)l->GetName()));
+                         (char*)l->GetName()));
     graph->GetYaxis()->SetTitle("Prolongation efficiency (%)");
     graph->SetMinimum(0);
     graph->SetMaximum(100);
@@ -2741,8 +2819,9 @@ TGraph *DetectorK::GetGraphLayerInfo(Int_t plot, Int_t color, Int_t linewidth) {
   return graph;
 }
 
-TGraph *DetectorK::GetGraphPointingResolutionTeleEqu(Int_t axis, Int_t color,
-                                                     Int_t linewidth) {
+TGraph* DetectorK::GetGraphPointingResolutionTeleEqu(Int_t axis, Int_t color,
+                                                     Int_t linewidth)
+{
   //
   // returns the Pointing resolution (accoring to Telescope equation)
   // axis =0 ... in rphi
@@ -2758,7 +2837,7 @@ TGraph *DetectorK::GetGraphPointingResolutionTeleEqu(Int_t axis, Int_t color,
   Int_t count = 0; // search two first active layers
   printf("Telescope equation for layers:  ");
   for (Int_t i = 0; i < fLayers.GetEntries(); i++) {
-    CylLayerK *l = (CylLayerK *)fLayers.At(i);
+    CylLayerK* l = (CylLayerK*)fLayers.At(i);
     if (!l->isDead && l->radius > 0) {
       layerRadius[count] = l->radius;
       layerThickness[count] = l->radL;
@@ -2777,25 +2856,25 @@ TGraph *DetectorK::GetGraphPointingResolutionTeleEqu(Int_t axis, Int_t color,
 
   Double_t pt, momentum, thickness, aMCS;
   Double_t lambda =
-      TMath::Pi() / 2.0 - 2.0 * TMath::ATan(TMath::Exp(-1 * fAvgRapidity));
+    TMath::Pi() / 2.0 - 2.0 * TMath::ATan(TMath::Exp(-1 * fAvgRapidity));
 
   for (Int_t i = 0; i < kNptBins; i++) {
     // Reference data as if first two layers were acting all alone
     pt = fTransMomenta[i];
     momentum = pt / TMath::Cos(lambda); // Total momentum
     resolution[i] = layerResolution[0] * layerResolution[0] * layerRadius[1] *
-                        layerRadius[1] +
+                      layerRadius[1] +
                     layerResolution[1] * layerResolution[1] * layerRadius[0] *
-                        layerRadius[0];
+                      layerRadius[0];
     resolution[i] /=
-        (layerRadius[1] - layerRadius[0]) * (layerRadius[1] - layerRadius[0]);
+      (layerRadius[1] - layerRadius[0]) * (layerRadius[1] - layerRadius[0]);
     thickness = layerThickness[0] / TMath::Sin(TMath::Pi() / 2 - lambda);
     aMCS = ThetaMCS(fParticleMass, thickness, momentum);
     resolution[i] += layerRadius[0] * layerRadius[0] * aMCS * aMCS;
     resolution[i] = TMath::Sqrt(resolution[i]) * 10000.0; // result in microns
   }
 
-  TGraph *graph = new TGraph(kNptBins, fTransMomenta, resolution);
+  TGraph* graph = new TGraph(kNptBins, fTransMomenta, resolution);
 
   if (axis == 0) {
     graph->SetTitle("RPhi Pointing Resolution .vs. Pt");
@@ -2820,8 +2899,9 @@ TGraph *DetectorK::GetGraphPointingResolutionTeleEqu(Int_t axis, Int_t color,
   return graph;
 }
 
-TGraph *DetectorK::GetGraphRecoEfficiency(Int_t particle, Int_t color,
-                                          Int_t linewidth) {
+TGraph* DetectorK::GetGraphRecoEfficiency(Int_t particle, Int_t color,
+                                          Int_t linewidth)
+{
   //
   // particle = 0 ... choosen particle (setted particleMass)
   // particle = 1 ... Pion
@@ -2829,7 +2909,7 @@ TGraph *DetectorK::GetGraphRecoEfficiency(Int_t particle, Int_t color,
   // particle = 3 ... D0
   //
   Double_t lambda =
-      TMath::Pi() / 2.0 - 2.0 * TMath::ATan(TMath::Exp(-1 * fAvgRapidity));
+    TMath::Pi() / 2.0 - 2.0 * TMath::ATan(TMath::Exp(-1 * fAvgRapidity));
 
   Double_t particleEfficiency[kNptBins]; // with chosen particle mass
   Double_t kaonEfficiency[kNptBins] = {0}, pionEfficiency[kNptBins] = {0},
@@ -2845,18 +2925,18 @@ TGraph *DetectorK::GetGraphRecoEfficiency(Int_t particle, Int_t color,
         // JT Test Let the kaon decay.  If it decays inside the TPC ... then it
         // is gone; for all decays < 130 cm.
         Double_t momentum =
-            fTransMomenta[j] /
-            TMath::Cos(lambda); // Total momentum at average rapidity
-        if (massloop == 1) {    // KAON
+          fTransMomenta[j] /
+          TMath::Cos(lambda); // Total momentum at average rapidity
+        if (massloop == 1) {  // KAON
           doNotDecayFactor =
-              TMath::Exp(-130 / (371 * momentum /
-                                 KaonMass)); // Decay length for kaon is 371 cm.
+            TMath::Exp(-130 / (371 * momentum /
+                               KaonMass)); // Decay length for kaon is 371 cm.
           kaonEfficiency[j] =
-              fEfficiency[1][j] * AcceptanceOfTpcAndSi * doNotDecayFactor;
+            fEfficiency[1][j] * AcceptanceOfTpcAndSi * doNotDecayFactor;
         } else { // PION
           doNotDecayFactor = 1.0;
           pionEfficiency[j] =
-              fEfficiency[0][j] * AcceptanceOfTpcAndSi * doNotDecayFactor;
+            fEfficiency[0][j] * AcceptanceOfTpcAndSi * doNotDecayFactor;
           printf("pionEfficiency[%d] %f\n", j, pionEfficiency[j]);
         }
         partEfficiency[0][j] = pionEfficiency[j];
@@ -2867,7 +2947,7 @@ TGraph *DetectorK::GetGraphRecoEfficiency(Int_t particle, Int_t color,
     // resulting estimate of the D0 efficiency
     for (Int_t j = 0; j < kNptBins; j++) {
       d0efficiency[j] =
-          D0IntegratedEfficiency(fTransMomenta[j], partEfficiency);
+        D0IntegratedEfficiency(fTransMomenta[j], partEfficiency);
     }
   } else {
     for (Int_t j = 0; j < kNptBins; j++) {
@@ -2883,10 +2963,10 @@ TGraph *DetectorK::GetGraphRecoEfficiency(Int_t particle, Int_t color,
     particleEfficiency[j] *= 100;
   }
 
-  TGraph *graph = 0;
+  TGraph* graph = 0;
   if (particle == 0) {
     graph =
-        new TGraph(kNptBins, fTransMomenta, particleEfficiency); // choosen mass
+      new TGraph(kNptBins, fTransMomenta, particleEfficiency); // choosen mass
     graph->SetLineWidth(1);
   } else if (particle == 1) {
     graph = new TGraph(kNptBins, fTransMomenta, pionEfficiency);
@@ -2917,8 +2997,9 @@ TGraph *DetectorK::GetGraphRecoEfficiency(Int_t particle, Int_t color,
   return graph;
 }
 
-TGraph *DetectorK::GetGraphRecoFakes(Int_t particle, Int_t color,
-                                     Int_t linewidth) {
+TGraph* DetectorK::GetGraphRecoFakes(Int_t particle, Int_t color,
+                                     Int_t linewidth)
+{
   //
   // particle = 0 ... choosen particle (setted particleMass)
   // particle = 1 ... Pion
@@ -2926,7 +3007,7 @@ TGraph *DetectorK::GetGraphRecoFakes(Int_t particle, Int_t color,
   //
 
   Double_t lambda =
-      TMath::Pi() / 2.0 - 2.0 * TMath::ATan(TMath::Exp(-1 * fAvgRapidity));
+    TMath::Pi() / 2.0 - 2.0 * TMath::ATan(TMath::Exp(-1 * fAvgRapidity));
 
   Double_t particleFake[kNptBins]; // with chosen particle mass
   Double_t kaonFake[kNptBins], pionFake[kNptBins];
@@ -2941,12 +3022,12 @@ TGraph *DetectorK::GetGraphRecoFakes(Int_t particle, Int_t color,
         // JT Test Let the kaon decay.  If it decays inside the TPC ... then it
         // is gone; for all decays < 130 cm.
         Double_t momentum =
-            fTransMomenta[j] /
-            TMath::Cos(lambda); // Total momentum at average rapidity
-        if (massloop == 1) {    // KAON
+          fTransMomenta[j] /
+          TMath::Cos(lambda); // Total momentum at average rapidity
+        if (massloop == 1) {  // KAON
           doNotDecayFactor =
-              TMath::Exp(-130 / (371 * momentum /
-                                 KaonMass)); // Decay length for kaon is 371 cm.
+            TMath::Exp(-130 / (371 * momentum /
+                               KaonMass)); // Decay length for kaon is 371 cm.
           kaonFake[j] = fFake[1][j] / (doNotDecayFactor);
         } else { // PION
           pionFake[j] = fFake[0][j];
@@ -2969,7 +3050,7 @@ TGraph *DetectorK::GetGraphRecoFakes(Int_t particle, Int_t color,
     particleFake[j] *= 100;
   }
 
-  TGraph *graph = 0;
+  TGraph* graph = 0;
   if (particle == 0) {
     graph = new TGraph(kNptBins, fTransMomenta, particleFake); // choosen mass
     graph->SetLineWidth(1);
@@ -2997,8 +3078,9 @@ TGraph *DetectorK::GetGraphRecoFakes(Int_t particle, Int_t color,
 
   return graph;
 }
-TGraph *DetectorK::GetGraphRecoPurity(Int_t particle, Int_t color,
-                                      Int_t linewidth) {
+TGraph* DetectorK::GetGraphRecoPurity(Int_t particle, Int_t color,
+                                      Int_t linewidth)
+{
   //
   // particle = 0 ... choosen particle (setted particleMass)
   // particle = 1 ... Pion
@@ -3029,7 +3111,7 @@ TGraph *DetectorK::GetGraphRecoPurity(Int_t particle, Int_t color,
     particleFake[j] = (1 - particleFake[j]) * 100;
   }
 
-  TGraph *graph = 0;
+  TGraph* graph = 0;
   if (particle == 0) {
     graph = new TGraph(kNptBins, fTransMomenta, particleFake); // choosen mass
     graph->SetLineWidth(1);
@@ -3058,23 +3140,24 @@ TGraph *DetectorK::GetGraphRecoPurity(Int_t particle, Int_t color,
   return graph;
 }
 
-TGraph *DetectorK::GetGraphImpactParam(Int_t mode, Int_t axis, Int_t color,
-                                       Int_t linewidth) {
+TGraph* DetectorK::GetGraphImpactParam(Int_t mode, Int_t axis, Int_t color,
+                                       Int_t linewidth)
+{
   //
   // returns the Impact Parameter d0 (convolution of pointing resolution and vtx
   // resolution) mode 0: impact parameter (convolution of pointing and vertex
   // resolution) mode 1: pointing resolution mode 2: vtx resolution
 
-  TGraph *graph = new TGraph();
+  TGraph* graph = new TGraph();
 
   //  TFormula vtxResRPhi("vtxRes","50-2*x"); // 50 microns at pt=0, 15 microns
   //  at pt =20 ?
   TFormula vtxResRPhi("vtxRes", "35/(x+1)+10"); //
   TFormula vtxResZ("vtxResZ", "600/(x+6)+10");  //
 
-  TGraph *trackRes = GetGraphPointingResolution(axis, 2);
-  Double_t *pt = trackRes->GetX();
-  Double_t *trRes = trackRes->GetY();
+  TGraph* trackRes = GetGraphPointingResolution(axis, 2);
+  Double_t* pt = trackRes->GetX();
+  Double_t* trRes = trackRes->GetY();
   for (Int_t ip = 0; ip < trackRes->GetN(); ip++) {
     Double_t vtxRes = 0;
     if (axis == 0)
@@ -3109,47 +3192,49 @@ TGraph *DetectorK::GetGraphImpactParam(Int_t mode, Int_t axis, Int_t color,
   return graph;
 }
 
-TGraph *DetectorK::GetGraph(Int_t number, Int_t color, Int_t linewidth) {
+TGraph* DetectorK::GetGraph(Int_t number, Int_t color, Int_t linewidth)
+{
   //
   // returns graph according to the number
   //
   switch (number) {
-  case 1:
-    return GetGraphPointingResolution(0, color, linewidth); // dr
-  case 2:
-    return GetGraphPointingResolution(1, color, linewidth); // dz
-  case 3:
-    return GetGraphPointingResolutionTeleEqu(0, color, linewidth); // dr - tele
-  case 4:
-    return GetGraphPointingResolutionTeleEqu(1, color, linewidth); // dz - tele
-  case 5:
-    return GetGraphMomentumResolution(color, linewidth); // pt resolution
-  case 10:
-    return GetGraphRecoEfficiency(0, color, linewidth); // tracked particle
-  case 11:
-    return GetGraphRecoEfficiency(1, color, linewidth); // eff. pion
-  case 12:
-    return GetGraphRecoEfficiency(2, color, linewidth); // eff. kaon
-  case 13:
-    return GetGraphRecoEfficiency(3, color, linewidth); // eff. D0
-  case 15:
-    return GetGraphRecoFakes(0, color, linewidth); // Fake tracked particle
-  case 16:
-    return GetGraphRecoFakes(1, color, linewidth); // Fake pion
-  case 17:
-    return GetGraphRecoFakes(2, color, linewidth); // Fake kaon
-  default:
-    printf(" Error: chosen graph number not valid\n");
+    case 1:
+      return GetGraphPointingResolution(0, color, linewidth); // dr
+    case 2:
+      return GetGraphPointingResolution(1, color, linewidth); // dz
+    case 3:
+      return GetGraphPointingResolutionTeleEqu(0, color, linewidth); // dr - tele
+    case 4:
+      return GetGraphPointingResolutionTeleEqu(1, color, linewidth); // dz - tele
+    case 5:
+      return GetGraphMomentumResolution(color, linewidth); // pt resolution
+    case 10:
+      return GetGraphRecoEfficiency(0, color, linewidth); // tracked particle
+    case 11:
+      return GetGraphRecoEfficiency(1, color, linewidth); // eff. pion
+    case 12:
+      return GetGraphRecoEfficiency(2, color, linewidth); // eff. kaon
+    case 13:
+      return GetGraphRecoEfficiency(3, color, linewidth); // eff. D0
+    case 15:
+      return GetGraphRecoFakes(0, color, linewidth); // Fake tracked particle
+    case 16:
+      return GetGraphRecoFakes(1, color, linewidth); // Fake pion
+    case 17:
+      return GetGraphRecoFakes(2, color, linewidth); // Fake kaon
+    default:
+      printf(" Error: chosen graph number not valid\n");
   }
   return 0;
 }
 
-void DetectorK::MakeAliceAllNew(Bool_t flagTPC, Bool_t flagMon) {
+void DetectorK::MakeAliceAllNew(Bool_t flagTPC, Bool_t flagMon)
+{
 
   // All New configuration with X0 = 0.3 and resolution = 4 microns
 
-  AddLayer((char *)"bpipe", 2.0, 0.0022); // beam pipe
-  AddLayer((char *)"vertex", 0, 0);       // dummy vertex for matrix calculation
+  AddLayer((char*)"bpipe", 2.0, 0.0022); // beam pipe
+  AddLayer((char*)"vertex", 0, 0);       // dummy vertex for matrix calculation
 
   // new ideal Pixel properties?
   Double_t x0 = 0.0050;
@@ -3162,30 +3247,31 @@ void DetectorK::MakeAliceAllNew(Bool_t flagTPC, Bool_t flagMon) {
     resZ = 0.0004;
   }
 
-  AddLayer((char *)"ddd1", 2.2, x0, resRPhi, resZ);
-  AddLayer((char *)"ddd2", 2.8, x0, resRPhi, resZ);
-  AddLayer((char *)"ddd3", 3.6, x0, resRPhi, resZ);
-  AddLayer((char *)"ddd4", 20.0, x0, resRPhi, resZ);
-  AddLayer((char *)"ddd5", 22.0, x0, resRPhi, resZ);
-  AddLayer((char *)"ddd6", 41.0, x0, resRPhi, resZ);
-  AddLayer((char *)"ddd7", 43.0, x0, resRPhi, resZ);
+  AddLayer((char*)"ddd1", 2.2, x0, resRPhi, resZ);
+  AddLayer((char*)"ddd2", 2.8, x0, resRPhi, resZ);
+  AddLayer((char*)"ddd3", 3.6, x0, resRPhi, resZ);
+  AddLayer((char*)"ddd4", 20.0, x0, resRPhi, resZ);
+  AddLayer((char*)"ddd5", 22.0, x0, resRPhi, resZ);
+  AddLayer((char*)"ddd6", 41.0, x0, resRPhi, resZ);
+  AddLayer((char*)"ddd7", 43.0, x0, resRPhi, resZ);
 
   if (flagTPC) {
     AddTPC(0.1, 0.1); // TPC
   }
 }
 
-void DetectorK::MakeAliceCurrent(Int_t AlignResiduals, Bool_t flagTPC) {
+void DetectorK::MakeAliceCurrent(Int_t AlignResiduals, Bool_t flagTPC)
+{
 
   // Numbers taken from
   // 2010 JINST 5 P03003 - Alignment of the ALICE Inner Tracking System with
   // cosmic-ray tracks number for misalingment: private communication with
   // Andrea Dainese
 
-  AddLayer((char *)"bpipe", 2.94, 0.0022); // beam pipe
-  AddLayer((char *)"vertex", 0, 0); // dummy vertex for matrix calculation
-  AddLayer((char *)"tshld1", 11.5, 0.0065); // Thermal shield  // 1.3% /2
-  AddLayer((char *)"tshld2", 31.0, 0.0065); // Thermal shield  // 1.3% /2
+  AddLayer((char*)"bpipe", 2.94, 0.0022);  // beam pipe
+  AddLayer((char*)"vertex", 0, 0);         // dummy vertex for matrix calculation
+  AddLayer((char*)"tshld1", 11.5, 0.0065); // Thermal shield  // 1.3% /2
+  AddLayer((char*)"tshld2", 31.0, 0.0065); // Thermal shield  // 1.3% /2
 
   if (flagTPC) {
     AddTPC(0.1, 0.1); // TPC
@@ -3194,12 +3280,12 @@ void DetectorK::MakeAliceCurrent(Int_t AlignResiduals, Bool_t flagTPC) {
 
   if (AlignResiduals == 0) {
 
-    AddLayer((char *)"spd1", 3.9, 0.0114, 0.0012, 0.0130);
-    AddLayer((char *)"spd2", 7.6, 0.0114, 0.0012, 0.0130);
-    AddLayer((char *)"sdd1", 15.0, 0.0113, 0.0035, 0.0025);
-    AddLayer((char *)"sdd2", 23.9, 0.0126, 0.0035, 0.0025);
-    AddLayer((char *)"ssd1", 38.0, 0.0083, 0.0020, 0.0830);
-    AddLayer((char *)"ssd2", 43.0, 0.0086, 0.0020, 0.0830);
+    AddLayer((char*)"spd1", 3.9, 0.0114, 0.0012, 0.0130);
+    AddLayer((char*)"spd2", 7.6, 0.0114, 0.0012, 0.0130);
+    AddLayer((char*)"sdd1", 15.0, 0.0113, 0.0035, 0.0025);
+    AddLayer((char*)"sdd2", 23.9, 0.0126, 0.0035, 0.0025);
+    AddLayer((char*)"ssd1", 38.0, 0.0083, 0.0020, 0.0830);
+    AddLayer((char*)"ssd2", 43.0, 0.0086, 0.0020, 0.0830);
 
   } else if (AlignResiduals == 1) {
 
@@ -3209,22 +3295,22 @@ void DetectorK::MakeAliceCurrent(Int_t AlignResiduals, Bool_t flagTPC) {
     // // [cm]
     // itsRecoParam->SetClusterMisalErrorZBOn(0.0050,0.0050,0.0050,0.0050,0.1000,0.1000);
 
-    AddLayer((char *)"spd1", 3.9, 0.0114,
+    AddLayer((char*)"spd1", 3.9, 0.0114,
              TMath::Sqrt(0.0012 * 0.0012 + 0.0010 * 0.0010),
              TMath::Sqrt(0.0130 * 0.0130 + 0.0050 * 0.0050));
-    AddLayer((char *)"spd2", 7.6, 0.0114,
+    AddLayer((char*)"spd2", 7.6, 0.0114,
              TMath::Sqrt(0.0012 * 0.0012 + 0.0030 * 0.0030),
              TMath::Sqrt(0.0130 * 0.0130 + 0.0050 * 0.0050));
-    AddLayer((char *)"sdd1", 15.0, 0.0113,
+    AddLayer((char*)"sdd1", 15.0, 0.0113,
              TMath::Sqrt(0.0035 * 0.0035 + 0.0500 * 0.0500),
              TMath::Sqrt(0.0025 * 0.0025 + 0.0050 * 0.0050));
-    AddLayer((char *)"sdd2", 23.9, 0.0126,
+    AddLayer((char*)"sdd2", 23.9, 0.0126,
              TMath::Sqrt(0.0035 * 0.0035 + 0.0500 * 0.0500),
              TMath::Sqrt(0.0025 * 0.0025 + 0.0050 * 0.0050));
-    AddLayer((char *)"ssd1", 38.0, 0.0083,
+    AddLayer((char*)"ssd1", 38.0, 0.0083,
              TMath::Sqrt(0.0020 * 0.0020 + 0.0020 * 0.0020),
              TMath::Sqrt(0.0830 * 0.0830 + 0.1000 * 0.1000));
-    AddLayer((char *)"ssd2", 43.0, 0.0086,
+    AddLayer((char*)"ssd2", 43.0, 0.0086,
              TMath::Sqrt(0.0020 * 0.0020 + 0.0020 * 0.0020),
              TMath::Sqrt(0.0830 * 0.0830 + 0.1000 * 0.1000));
 
@@ -3239,22 +3325,22 @@ void DetectorK::MakeAliceCurrent(Int_t AlignResiduals, Bool_t flagTPC) {
     //  the ITS modules are misalignment with small gaussian smearings with
     //  sigmarphi ~ 8, 10, 10 micron in SPD, SDD, SSD
 
-    AddLayer((char *)"spd1", 3.9, 0.0114,
+    AddLayer((char*)"spd1", 3.9, 0.0114,
              TMath::Sqrt(0.0012 * 0.0012 + 0.0010 * 0.0010 + 0.0008 * 0.0008),
              TMath::Sqrt(0.0130 * 0.0130 + 0.0050 * 0.0050));
-    AddLayer((char *)"spd2", 7.6, 0.0114,
+    AddLayer((char*)"spd2", 7.6, 0.0114,
              TMath::Sqrt(0.0012 * 0.0012 + 0.0030 * 0.0030 + 0.0008 * 0.0008),
              TMath::Sqrt(0.0130 * 0.0130 + 0.0050 * 0.0050));
-    AddLayer((char *)"sdd1", 15.0, 0.0113,
+    AddLayer((char*)"sdd1", 15.0, 0.0113,
              TMath::Sqrt(0.0035 * 0.0035 + 0.0500 * 0.0500 + 0.0010 * 0.0010),
              TMath::Sqrt(0.0025 * 0.0025 + 0.0050 * 0.0050));
-    AddLayer((char *)"sdd2", 23.9, 0.0126,
+    AddLayer((char*)"sdd2", 23.9, 0.0126,
              TMath::Sqrt(0.0035 * 0.0035 + 0.0500 * 0.0500 + 0.0010 * 0.0010),
              TMath::Sqrt(0.0025 * 0.0025 + 0.0050 * 0.0050));
-    AddLayer((char *)"ssd1", 38.0, 0.0083,
+    AddLayer((char*)"ssd1", 38.0, 0.0083,
              TMath::Sqrt(0.0020 * 0.0020 + 0.0020 * 0.0020 + 0.0010 * 0.0010),
              TMath::Sqrt(0.0830 * 0.0830 + 0.1000 * 0.1000));
-    AddLayer((char *)"ssd2", 43.0, 0.0086,
+    AddLayer((char*)"ssd2", 43.0, 0.0086,
              TMath::Sqrt(0.0020 * 0.0020 + 0.0020 * 0.0020 + 0.0010 * 0.0010),
              TMath::Sqrt(0.0830 * 0.0830 + 0.1000 * 0.1000));
 
@@ -3264,22 +3350,22 @@ void DetectorK::MakeAliceCurrent(Int_t AlignResiduals, Bool_t flagTPC) {
     //  sigmarphi ~ 8, 10, 10 micron in SPD, SDD, SSD
     //  unknown in Z ????
 
-    AddLayer((char *)"spd1", 3.9, 0.0114,
+    AddLayer((char*)"spd1", 3.9, 0.0114,
              TMath::Sqrt(0.0012 * 0.0012 + 0.0008 * 0.0008),
              TMath::Sqrt(0.0130 * 0.0130 + 0.000 * 0.000));
-    AddLayer((char *)"spd2", 7.6, 0.0114,
+    AddLayer((char*)"spd2", 7.6, 0.0114,
              TMath::Sqrt(0.0012 * 0.0012 + 0.0008 * 0.0008),
              TMath::Sqrt(0.0130 * 0.0130 + 0.000 * 0.000));
-    AddLayer((char *)"sdd1", 15.0, 0.0113,
+    AddLayer((char*)"sdd1", 15.0, 0.0113,
              TMath::Sqrt(0.0035 * 0.0035 + 0.0010 * 0.0010),
              TMath::Sqrt(0.0025 * 0.0025 + 0.000 * 0.000));
-    AddLayer((char *)"sdd2", 23.9, 0.0126,
+    AddLayer((char*)"sdd2", 23.9, 0.0126,
              TMath::Sqrt(0.0035 * 0.0035 + 0.0010 * 0.0010),
              TMath::Sqrt(0.0025 * 0.0025 + 0.000 * 0.000));
-    AddLayer((char *)"ssd1", 38.0, 0.0083,
+    AddLayer((char*)"ssd1", 38.0, 0.0083,
              TMath::Sqrt(0.0020 * 0.0020 + 0.0010 * 0.0010),
              TMath::Sqrt(0.0830 * 0.0830 + 0.000 * 0.000));
-    AddLayer((char *)"ssd2", 43.0, 0.0086,
+    AddLayer((char*)"ssd2", 43.0, 0.0086,
              TMath::Sqrt(0.0020 * 0.0020 + 0.0010 * 0.0010),
              TMath::Sqrt(0.0830 * 0.0830 + 0.000 * 0.000));
   }
@@ -3302,12 +3388,13 @@ void DetectorK::MakeAliceCurrent(Int_t AlignResiduals, Bool_t flagTPC) {
 }
 */
 
-void DetectorK::AddPetalGapsToLayer(const char *layerName,
+void DetectorK::AddPetalGapsToLayer(const char* layerName,
                                     int nPetals,
                                     double gapWidthRad,
                                     double layerOffsetRad,
-                                    bool centerGap = kTRUE) {
-  CylLayerK *layer = (CylLayerK *)fLayers.FindObject(layerName);
+                                    bool centerGap = kTRUE)
+{
+  CylLayerK* layer = (CylLayerK*)fLayers.FindObject(layerName);
   if (!layer) {
     printf("Layer %s not found!\n", layerName);
     return;
@@ -3316,55 +3403,59 @@ void DetectorK::AddPetalGapsToLayer(const char *layerName,
   for (int i = 0; i < nPetals; ++i) {
     double phi_start, phi_end;
     if (centerGap) {
-    // Center of the gap for this petal
-    double phi_center = layerOffsetRad + i * (2 * TMath::Pi() / nPetals);
-    // Shift start/end so the gap is centered at phi_center
-    phi_start = phi_center - gapWidthRad / 2.0;
-    phi_end   = phi_center + gapWidthRad / 2.0;
-    }
-    else{
-       // Start gap at offset
+      // Center of the gap for this petal
+      double phi_center = layerOffsetRad + i * (2 * TMath::Pi() / nPetals);
+      // Shift start/end so the gap is centered at phi_center
+      phi_start = phi_center - gapWidthRad / 2.0;
+      phi_end = phi_center + gapWidthRad / 2.0;
+    } else {
+      // Start gap at offset
       phi_start = layerOffsetRad + i * (2 * TMath::Pi() / nPetals);
-      phi_end   = phi_start + gapWidthRad;
+      phi_end = phi_start + gapWidthRad;
     }
-        // Normalize to [0, 2π)
-    if (phi_start < 0)      phi_start += 2 * TMath::Pi();
-    if (phi_end   < 0)      phi_end   += 2 * TMath::Pi();
-    if (phi_start >= 2 * TMath::Pi()) phi_start -= 2 * TMath::Pi();
-    if (phi_end   >= 2 * TMath::Pi()) phi_end   -= 2 * TMath::Pi();
+    // Normalize to [0, 2π)
+    if (phi_start < 0)
+      phi_start += 2 * TMath::Pi();
+    if (phi_end < 0)
+      phi_end += 2 * TMath::Pi();
+    if (phi_start >= 2 * TMath::Pi())
+      phi_start -= 2 * TMath::Pi();
+    if (phi_end >= 2 * TMath::Pi())
+      phi_end -= 2 * TMath::Pi();
 
-    //double phi_start = layerOffsetRad + i * (2 * TMath::Pi() / nPetals);
-    //double phi_end   = phi_start + gapWidthRad;
+    // double phi_start = layerOffsetRad + i * (2 * TMath::Pi() / nPetals);
+    // double phi_end   = phi_start + gapWidthRad;
     layer->AddPhiGap(phi_start, phi_end);
   }
 }
 
-
-void DetectorK::ClearAllPhiGaps() {
+void DetectorK::ClearAllPhiGaps()
+{
   printf("[INFO] Clearing all Phi gaps layers:\n");
   for (Int_t i = 0; i < GetNumberOfLayers(); ++i) {
-    CylLayerK *layer = dynamic_cast<CylLayerK *>(GetLayers()->At(i));
+    CylLayerK* layer = dynamic_cast<CylLayerK*>(GetLayers()->At(i));
     if (layer) {
-      int nGapsBefore = layer->GetNumberOfPhiGaps(); 
+      int nGapsBefore = layer->GetNumberOfPhiGaps();
       layer->ClearPhiGaps();
       printf("  Cleared phi-gap in layer: %s\n", layer->GetName());
-        int nGapsAfter = layer->GetNumberOfPhiGaps();
-        printf("  Layer: %s | Gaps before: %d → after: %d\n", layer->GetName(), nGapsBefore, nGapsAfter);
+      int nGapsAfter = layer->GetNumberOfPhiGaps();
+      printf("  Layer: %s | Gaps before: %d → after: %d\n", layer->GetName(), nGapsBefore, nGapsAfter);
     }
   }
 }
 
 void DetectorK::MakeStandardPlots(Bool_t add, Int_t color, Int_t linewidth,
-                                  Bool_t onlyPionEff) {
+                                  Bool_t onlyPionEff)
+{
   //
   // Produces the standard performace plots
-  // 
+  //
   TString shiftLabel = Form("_phiShift_%.3f", fPhiShift);
 
   TGraph *eff, *momRes, *pointRes;
   if (!add) {
 
-    TCanvas *c1 = new TCanvas("c1", "c1", 100, 100, 1500, 1200);
+    TCanvas* c1 = new TCanvas("c1", "c1", 100, 100, 1500, 1200);
     c1->Divide(2, 2);
 
     c1->cd(1);
@@ -3400,7 +3491,7 @@ void DetectorK::MakeStandardPlots(Bool_t add, Int_t color, Int_t linewidth,
     momRes = GetGraphMomentumResolution(color, linewidth);
     momRes->SetName(Form("grMomRes%d", 1));
     momRes->Draw("AL");
-    //momRes->SaveAs("momRes.root");
+    // momRes->SaveAs("momRes.root");
     momRes->SaveAs(Form("momRes%d%s.root", 1, shiftLabel.Data()));
 
     c1->cd(3);
@@ -3413,7 +3504,6 @@ void DetectorK::MakeStandardPlots(Bool_t add, Int_t color, Int_t linewidth,
     pointRes->Draw("AL");
     pointRes->SaveAs(Form("pointResXY%d%s.root", 1, shiftLabel.Data()));
 
-    
     //
     c1->cd(4);
     gPad->SetGridx();
@@ -3421,14 +3511,13 @@ void DetectorK::MakeStandardPlots(Bool_t add, Int_t color, Int_t linewidth,
     gPad->SetLogx();
     gPad->SetLogy();
     pointRes = GetGraphPointingResolution(1, color, linewidth);
-    //pointRes->SetName(Form("pointZRes%d", 0));
+    // pointRes->SetName(Form("pointZRes%d", 0));
     pointRes->Draw("AL");
     pointRes->SaveAs(Form("pointResZ%d%s.root", 1, shiftLabel.Data()));
- 
 
   } else {
 
-    TVirtualPad *c1 = gPad->GetMother();
+    TVirtualPad* c1 = gPad->GetMother();
 
     c1->cd(1);
     eff = GetGraphRecoEfficiency(0, color, linewidth);
@@ -3459,7 +3548,6 @@ void DetectorK::MakeStandardPlots(Bool_t add, Int_t color, Int_t linewidth,
     pointRes->Draw("L");
     pointRes->SaveAs("pointResXY.root");
 
-
     c1->cd(4);
     pointRes = GetGraphPointingResolution(1, color, linewidth);
     pointRes->SetName(Form("pointZRes%dadd", 0));
@@ -3471,12 +3559,13 @@ void DetectorK::MakeStandardPlots(Bool_t add, Int_t color, Int_t linewidth,
   }
 }
 
-TH1F *DetectorK::GetPhiHistogram() const { return hPhiDist; }
+TH1F* DetectorK::GetPhiHistogram() const { return hPhiDist; }
 
-TH2F *DetectorK::GetEffVsPhiHistogram() const { return hEffVsPhi; }
+TH2F* DetectorK::GetEffVsPhiHistogram() const { return hEffVsPhi; }
 
-Bool_t DetectorK::GetXatLabR(AliExternalTrackParam *tr, Double_t r, Double_t &x,
-                             Double_t bz, Int_t dir) {
+Bool_t DetectorK::GetXatLabR(AliExternalTrackParam* tr, Double_t r, Double_t& x,
+                             Double_t bz, Int_t dir)
+{
   // Get local X of the track position estimated at the radius lab radius r.
   // The track curvature is accounted exactly
   //
@@ -3491,7 +3580,7 @@ Bool_t DetectorK::GetXatLabR(AliExternalTrackParam *tr, Double_t r, Double_t &x,
     return kTRUE;
   }
 
-  const double *pars = tr->GetParameter();
+  const double* pars = tr->GetParameter();
   const Double_t &fy = pars[0], &sn = pars[2];
   const double kEps = 1.e-6;
   //
@@ -3535,8 +3624,8 @@ Bool_t DetectorK::GetXatLabR(AliExternalTrackParam *tr, Double_t r, Double_t &x,
       double dfy = tR2r0 * x0 * TMath::Sign(det, y0);
       if (dir == 0) { // chose the one which corresponds to smallest step
         double delta =
-            (x - fx) * dfx - (y - fy) * dfy; // the choice of + in C will lead
-                                             // to smaller step if delta<0
+          (x - fx) * dfx - (y - fy) * dfy; // the choice of + in C will lead
+                                           // to smaller step if delta<0
         if (delta < 0)
           x += dfx;
         else
@@ -3595,7 +3684,7 @@ Bool_t DetectorK::GetXatLabR(AliExternalTrackParam *tr, Double_t r, Double_t &x,
         else {
           if (fy < -det)
             return kFALSE;
-        }                   // track is against Y axis amd belo the circle
+        } // track is against Y axis amd belo the circle
       } else if (dir > 0) { // agains track direction
         if (sn > 0) {
           if (fy < -det)
@@ -3639,8 +3728,8 @@ Bool_t DetectorK::GetXatLabR(AliExternalTrackParam *tr, Double_t r, Double_t &x,
       double t = -xcys;
       if (dir == 0)
         t +=
-            t > 0 ? -det : det; // chose the solution requiring the smalest step
-      else if (dir > 0) {       // go in increasing fX direction. ( t+-det > 0)
+          t > 0 ? -det : det; // chose the solution requiring the smalest step
+      else if (dir > 0) {     // go in increasing fX direction. ( t+-det > 0)
         if (t >= -det)
           t += -det; // take minimal step giving t>0
         else
@@ -3658,17 +3747,18 @@ Bool_t DetectorK::GetXatLabR(AliExternalTrackParam *tr, Double_t r, Double_t &x,
   return kTRUE;
 }
 
-Double_t *DetectorK::PrepareEffFakeKombinations(TMatrixD *probKomb,
-                                                TMatrixD *probLay,
-                                                double *probs) {
+Double_t* DetectorK::PrepareEffFakeKombinations(TMatrixD* probKomb,
+                                                TMatrixD* probLay,
+                                                double* probs)
+{
 
   if (!probLay) {
     printf("Error: Layer tracking efficiencies not set \n");
     return 0;
   }
 
-  TMatrixD &tProbKomb = *probKomb;
-  TMatrixD &tProbLay = *probLay;
+  TMatrixD& tProbKomb = *probKomb;
+  TMatrixD& tProbLay = *probLay;
 
   //  Int_t base = tProbLay.GetNcols(); // 3? null, fake, correct
   Int_t nLayer = tProbKomb.GetNcols(); // nlayer? - number of ITS layers
@@ -3682,15 +3772,16 @@ Double_t *DetectorK::PrepareEffFakeKombinations(TMatrixD *probKomb,
     Int_t flCorr = 0, flFake = 0, flNull = 0;
     Int_t flInnerHits = 0;
     for (Int_t l = 0; l < nLayer; l++) {
-      CylLayerK *layer = (CylLayerK*) fLayers.At(l);
-      if (!layer) continue; 
+      CylLayerK* layer = (CylLayerK*)fLayers.At(l);
+      if (!layer)
+        continue;
       TString lname(layer->GetName());
-      if ( tProbKomb(num, l) == 2 || tProbKomb(num, l) == 1) { 
-        if (IsInnerLayer(lname)) flInnerHits++;
-           //printf ("inner layer %s, inner hits %d\n", lname.Data(), flInnerHits);
-        
-      } 
-      //else 
+      if (tProbKomb(num, l) == 2 || tProbKomb(num, l) == 1) {
+        if (IsInnerLayer(lname))
+          flInnerHits++;
+        // printf ("inner layer %s, inner hits %d\n", lname.Data(), flInnerHits);
+      }
+      // else
       if (tProbKomb(num, l) == 0)
         flNull++;
       else if (tProbKomb(num, l) == 1)
@@ -3711,8 +3802,9 @@ Double_t *DetectorK::PrepareEffFakeKombinations(TMatrixD *probKomb,
     if (flCorr + flFake < fAtLeastHits)
       continue;
 
-    if (flInnerHits < fAtLeastInnerHits) continue;  
-    
+    if (flInnerHits < fAtLeastInnerHits)
+      continue;
+
     if (flCorr >= fkAtLeastCorr &&
         flFake == 0) { // at least correct but zero fake
       Double_t probEffLayer = 1;
@@ -3742,8 +3834,9 @@ Double_t *DetectorK::PrepareEffFakeKombinations(TMatrixD *probKomb,
 }
 
 //____________________________________
-Bool_t DetectorK::PropagateToR(AliExternalTrackParam *trc, double r, double b,
-                               int dir) {
+Bool_t DetectorK::PropagateToR(AliExternalTrackParam* trc, double r, double b,
+                               int dir)
+{
   // go to radius R
   //
   double xR = 0;
@@ -3812,12 +3905,13 @@ Bool_t DetectorK::PropagateToR(AliExternalTrackParam *trc, double r, double b,
 }
 
 //_________________________________________
-Bool_t DetectorK::IsITSLayer(const TString &lname) {
+Bool_t DetectorK::IsITSLayer(const TString& lname)
+{
   // return true for ITS layers
   return !(lname.Contains("tpc") || lname.Contains("trd") || lname.Contains("pipe") || lname.Contains("wall") || lname.Contains("petal") || lname.Contains("plate"));
 }
 
-Bool_t DetectorK::IsInnerLayer(const TString& lname) {
+Bool_t DetectorK::IsInnerLayer(const TString& lname)
+{
   return (lname.Contains("ddd0") || lname.EqualTo("ddd1") || lname.Contains("ddd2"));
 }
-
