@@ -11,7 +11,8 @@ RMIN=100.
 OUT_PATH=.
 OUT_TAG=
 PARALLEL_JOBS=1
-PARTICLES="0 1 2 3 4"
+//PARTICLES="0 1 2 3 4"
+PARTICLES="2 3 4"
 AUTOTAG="Yes"
 DIPOLE="No"
 FLATDIPOLE="No"
@@ -141,6 +142,18 @@ if [[ -z ${WRITER_PATH} ]]; then
     echo "Path of the LUT writers not defined, cannot continue"
     exit 1
 fi
+
+function cleanup_temp_files() {
+    echo " "
+    echo " > Cleaning up temporary source and compiled files..."
+    rm -rf HistoManager.cxx HistoManager.h \
+           DetectorK.cxx DetectorK.h \
+           lutWrite.cc "lutWrite.${WHAT}.cc" \
+           lutCovm.hh fwdRes/ \
+           *_cxx.so *_cxx.d *_cxx_ACLiC_dict.* *.pcm
+}
+
+trap cleanup_temp_files EXIT
 
 function do_copy() {
     cp "${1}" . || {
