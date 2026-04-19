@@ -15,6 +15,8 @@ void fatInit_geometry_ML_baseline_default_radii(float field = 2.0, float rmin = 
   Double_t x0MLMod2 = 0.0025; // 0.25%
   Double_t x0OT = 0.01;       // 1%
 
+  Double_t xrho = 0;
+
   Double_t resRPhiVD = 0.00025; // 2.5 mum
   Double_t resZVD = 0.00025;    // 2.5 mum
   Double_t resRPhiOT = 0.0010;  // 10 mum
@@ -22,47 +24,47 @@ void fatInit_geometry_ML_baseline_default_radii(float field = 2.0, float rmin = 
 
   Double_t eff = 0.98;
 
-  Double_t alpha = 7.404 * TMath::DegToRad();  // ~0.1292 rad
+  /*Double_t alpha = 7.404 * TMath::DegToRad();  // ~0.1292 rad
   Double_t beta = 21.371 * TMath::DegToRad();  // ~0.3728 rad
   Double_t gamma = 11.134 * TMath::DegToRad(); // ~0.1943 rad
 
-  Int_t nPetals = 3; // 3 petals INCLINED STANDARD
+  Int_t nPetals = 3; // 3 petals INCLINED STANDARD*/
 
   // Geometry layout
   fat.AddLayer((char*)"vertex", 0.0, 0, 0); // dummy vertex for matrix calculation
 
-  fat.AddLayer((char*)"bpipe0", 0.48, x0Pipe0);
+  fat.AddLayer((char*)"bpipe0", 0.48, x0Pipe0, xrho);
 
-  fat.AddLayer((char*)"ddd0", 0.5, x0VDL0, resRPhiVD, resZVD, eff);
-  fat.AddPetalGapsToLayer("ddd0", nPetals, 0.240, 0.);
-  fat.AddLayer((char*)"ddd1", 1.2, x0VDL1, resRPhiVD, resZVD, eff);
-  fat.AddPetalGapsToLayer("ddd1", nPetals, 0.1, alpha + beta);
-  fat.AddLayer((char*)"ddd2", 2.5, x0VDL2, resRPhiVD, resZVD, eff);
-  fat.AddPetalGapsToLayer("ddd2", nPetals, 0.048, alpha + beta + gamma);
+  fat.AddLayer((char*)"ddd0", 0.5, x0VDL0, xrho, resRPhiVD, resZVD, eff);
+  // fat.AddPetalGapsToLayer("ddd0", nPetals, 0.240, 0.);
+  fat.AddLayer((char*)"ddd1", 1.2, x0VDL1, xrho, resRPhiVD, resZVD, eff);
+  // fat.AddPetalGapsToLayer("ddd1", nPetals, 0.1, alpha + beta);
+  fat.AddLayer((char*)"ddd2", 2.5, x0VDL2, xrho, resRPhiVD, resZVD, eff);
+  // fat.AddPetalGapsToLayer("ddd2", nPetals, 0.048, alpha + beta + gamma);
 
-  fat.AddLayer((char*)"coldplate", 2.6, x0Coldplate);
-  fat.AddLayer((char*)"petal1", 3.7, x0Petal);
+  fat.AddLayer((char*)"coldplate", 2.6, x0Coldplate, xrho);
+  fat.AddLayer((char*)"petal1", 3.7, x0Petal, xrho);
 
-  fat.AddLayer((char*)"bpipe1", 5.7, x0Pipe1);
+  fat.AddLayer((char*)"bpipe1", 5.7, x0Pipe1, xrho);
 
-  fat.AddLayer((char*)"ddd3", 7, x0OT, resRPhiOT, resZOT, eff);
-  fat.AddLayer((char*)"ddd4", 11., x0OT, resRPhiOT, resZOT, eff);
-  fat.AddLayer((char*)"ddd5", 15., x0OT, resRPhiOT, resZOT, eff);
-  fat.AddLayer((char*)"ddd6", 20., x0OT, resRPhiOT, resZOT, eff);
+  fat.AddLayer((char*)"ddd3", 7, x0OT, xrho, resRPhiOT, resZOT, eff);
+  fat.AddLayer((char*)"ddd4", 11., x0OT, xrho, resRPhiOT, resZOT, eff);
+  fat.AddLayer((char*)"ddd5", 15., x0OT, xrho, resRPhiOT, resZOT, eff);
+  fat.AddLayer((char*)"ddd6", 20., x0OT, xrho, resRPhiOT, resZOT, eff);
 
-  fat.AddLayer((char*)"iTOF", 21., 3. * x0OT, 0.03, 0.03, 1.0); // NEW 23/03/26 iTOF moved to 21 cm
+  fat.AddLayer((char*)"iTOF", 21., 3. * x0OT, xrho, 0.03, 0.03, 1.0); // NEW 23/03/26 iTOF moved to 21 cm
 
-  fat.AddLayer((char*)"ddd7", 30., x0OT, resRPhiOT, resZOT, eff);
-  fat.AddLayer((char*)"ddd8", 45., x0OT, resRPhiOT, resZOT, eff);
-  fat.AddLayer((char*)"ddd9", 60., x0OT, resRPhiOT, resZOT, eff);
-  fat.AddLayer((char*)"ddd10", 80., x0OT, resRPhiOT, resZOT, eff);
+  fat.AddLayer((char*)"ddd7", 30., x0OT, xrho, resRPhiOT, resZOT, eff);
+  fat.AddLayer((char*)"ddd8", 45., x0OT, xrho, resRPhiOT, resZOT, eff);
+  fat.AddLayer((char*)"ddd9", 60., x0OT, xrho, resRPhiOT, resZOT, eff);
+  fat.AddLayer((char*)"ddd10", 80., x0OT, xrho, resRPhiOT, resZOT, eff);
 
-  fat.AddLayer((char*)"oTOF", 92., 3. * x0OT, 0.15, 0.15, 1.0); // in the previous work it was commented out
+  fat.AddLayer((char*)"oTOF", 92., 3. * x0OT, xrho, 0.15, 0.15, 1.0); // in the previous work it was commented out
 
   fat.SetAtLeastHits(7);
   fat.SetAtLeastCorr(0);
   fat.SetAtLeastFake(2);
-  fat.SetAtLeastInnerHits(3);
+  // fat.SetAtLeastInnerHits(3);
 
   fat.SetBField(field);
   fat.SetMinRadTrack(rmin);
