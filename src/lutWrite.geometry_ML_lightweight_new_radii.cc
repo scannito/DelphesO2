@@ -1,6 +1,6 @@
 #include "lutWrite.cc"
 
-void fatInit_geometry_ML_baseline_default_radii(float field = 2.0, float rmin = 20.)
+void fatInit_geometry_ML_lightweight_new_radii(float field = 2.0, float rmin = 20.)
 {
   // Layer properties
   Double_t x0Pipe0 = 0.001592;      // 150 um AlBe (X0=16.6cm)
@@ -74,11 +74,11 @@ void fatInit_geometry_ML_baseline_default_radii(float field = 2.0, float rmin = 
   return;
 }
 
-void lutWrite_geometry_ML_baseline_default_radii(const char* filename = "lutCovm.dat", int pdg = 211, float field = 2.0, float rmin = 20.)
+void lutWrite_geometry_ML_lightweight_new_radii(const char* filename = "lutCovm.dat", int pdg = 211, float field = 2.0, float rmin = 20.)
 {
 
   // init FAT
-  fatInit_geometry_ML_baseline_default_radii(field, rmin);
+  fatInit_geometry_ML_lightweight_new_radii(field, rmin);
   // write
   lutWrite(filename, pdg, field);
 }
