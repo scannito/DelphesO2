@@ -36,11 +36,8 @@ void fatInit_geometry_ML_baseline_default_radii(float field = 2.0, float rmin = 
   fat.AddLayer((char*)"bpipe0", 0.48, x0Pipe0, xrho);
 
   fat.AddLayer((char*)"ddd0", 0.5, x0VDL0, xrho, resRPhiVD, resZVD, eff);
-  // fat.AddPetalGapsToLayer("ddd0", nPetals, 0.240, 0.);
   fat.AddLayer((char*)"ddd1", 1.2, x0VDL1, xrho, resRPhiVD, resZVD, eff);
-  // fat.AddPetalGapsToLayer("ddd1", nPetals, 0.1, alpha + beta);
   fat.AddLayer((char*)"ddd2", 2.5, x0VDL2, xrho, resRPhiVD, resZVD, eff);
-  // fat.AddPetalGapsToLayer("ddd2", nPetals, 0.048, alpha + beta + gamma);
 
   fat.AddLayer((char*)"coldplate", 2.6, x0Coldplate, xrho);
   fat.AddLayer((char*)"petal1", 3.7, x0Petal, xrho);
@@ -64,7 +61,6 @@ void fatInit_geometry_ML_baseline_default_radii(float field = 2.0, float rmin = 
   fat.SetAtLeastHits(7);
   fat.SetAtLeastCorr(0);
   fat.SetAtLeastFake(2);
-  // fat.SetAtLeastInnerHits(3);
 
   fat.SetAvgRapidity(0.0);
   fat.SetdNdEtaCent(2000);
